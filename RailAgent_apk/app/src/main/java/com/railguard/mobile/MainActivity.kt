@@ -368,7 +368,17 @@ fun RailGuardScreen() {
                     logCount = logCount,
                     executionProvider = executionProvider,
                     onProviderChange = { executionProvider = it },
-                    profiler = profiler
+                    profiler = profiler,
+                    networkManager = networkManager,
+                    networkTestResult = networkTestResult,
+                    isTestingNetwork = isTestingNetwork,
+                    onTestNetwork = {
+                        scope.launch {
+                            isTestingNetwork = true
+                            networkTestResult = networkManager.testConnection()
+                            isTestingNetwork = false
+                        }
+                    }
                 )
             }
         }
@@ -538,15 +548,96 @@ fun DiagnosticsPanel(
     logCount: Int,
     executionProvider: RailDetector.ExecutionProvider,
     onProviderChange: (RailDetector.ExecutionProvider) -> Unit,
-    profiler: PipelineProfiler
+    profiler: PipelineProfiler,
+    networkManager: NetworkManager,
+    networkTestResult: String?,
+    isTestingNetwork: Boolean,
+    onTestNetwork: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(modifier = Modifier.fillMaxWidth().padding(24.dp).verticalScroll(rememberScrollState())) {
         Text("System Diagnostics", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(modifier = Modifier.height(16.dp))
+        
+        DiagnosticRow("Pi Server", if (isServerOnline) "REACHABLE" else "OFFLINE", if (isServerOnline) Color.Green else Color.Red)
         DiagnosticRow("AI Engine", railStatus, Color.Green)
         DiagnosticRow("Inference", "$processingFPS FPS", Color.Cyan)
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Network Configuration", fontSize = 14.sp, color = Color.Gray)
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        DiagnosticRow("Phone IP", NetworkManager.getLocalIpAddress() ?: "Unknown", Color.White)
+        DiagnosticRow("Target IP", networkManager.getBaseUrl().substringAfter("//").substringBefore(":"), Color.White)
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        var ipInput by remember { mutableStateOf(networkManager.getBaseUrl().substringAfter("//").substringBefore(":")) }
+        OutlinedTextField(
+            value = ipInput,
+            onValueChange = { 
+                ipInput = it
+                networkManager.setBaseUrl(it)
+            },
+            label = { Text("Edit Pi IP Address", color = Color.Gray) },
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 14.sp),
+            singleLine = true,
+            shape = RoundedCornerShape(8.dp)
+        )
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Button(
+            onClick = onTestNetwork,
+            enabled = !isTestingNetwork,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            if (isTestingNetwork) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Testing...")
+            } else {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Ping Pi Server")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // New button to verify if the browser can reach it
+        OutlinedButton(
+            onClick = { 
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(networkManager.getBaseUrl() + "docs"))
+                context.startActivity(intent)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text("Open Pi Docs in Browser")
+        }
+        
+        networkTestResult?.let { result ->
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.DarkGray.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = result,
+                    modifier = Modifier.padding(12.dp),
+                    fontSize = 12.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    color = if (result.contains("SUCCESS")) Color.Green else Color(0xFFF87171)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
         Text("Benchmarking", fontSize = 14.sp, color = Color.Gray)
         Row(modifier = Modifier.fillMaxWidth()) {
             Button(onClick = { onProviderChange(RailDetector.ExecutionProvider.CPU) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = if (executionProvider == RailDetector.ExecutionProvider.CPU) Color(0xFF2563EB) else Color.DarkGray), shape = RoundedCornerShape(8.dp)) { Text("CPU") }
@@ -589,21 +680,4 @@ fun DiagnosticRow(label: String, value: String, color: Color) {
     }
 }
 
-fun getLocalIpAddress(): String? {
-    try {
-        val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-        while (interfaces.hasMoreElements()) {
-            val networkInterface = interfaces.nextElement()
-            val addresses = networkInterface.inetAddresses
-            while (addresses.hasMoreElements()) {
-                val address = addresses.nextElement()
-                if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
-                    return address.hostAddress
-                }
-            }
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return null
-}
+

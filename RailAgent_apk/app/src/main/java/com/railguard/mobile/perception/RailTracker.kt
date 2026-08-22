@@ -6,7 +6,7 @@ import kotlin.math.abs
  * Temporal rail tracker.
  */
 class RailTracker(
-    private val smoothingFactor: Float = 0.35f, 
+    private val smoothingFactor: Float = 0.45f, 
 ) {
     private var previousLeft: RailCurve? = null
     private var previousRight: RailCurve? = null
@@ -97,7 +97,7 @@ class RailTracker(
             right = smoothedRight,
             geometry = geometry,
             trackingConfidence = trackingConfidence,
-            stable = consecutiveGoodFrames >= 1
+            stable = consecutiveGoodFrames >= 3
         )
     }
 
@@ -146,7 +146,7 @@ class RailTracker(
             count += 2
         }
         val averageDifference = if (count > 0) totalDifference / count else 1.0f
-        return (1.0f - averageDifference * 10.0f).coerceIn(0.0f, 1.0f)
+        return (1.0f - averageDifference * 5.0f).coerceIn(0.0f, 1.0f)
     }
 
     fun reset() {

@@ -71,16 +71,29 @@ class RailDetector(context: Context) : AutoCloseable {
             ortEnv = OrtEnvironment.getEnvironment()
             currentProvider = provider
             
-            val modelBytes = context.assets.open("rail_model.onnx").readBytes()
+            val assets = context.assets.list("") ?: emptyArray()
+            val modelName = if (assets.contains("rail_model_quant.onnx")) "rail_model_quant.onnx" else "rail_model.onnx"
+            Log.i(TAG, "Loading model: $modelName")
+            
+            val modelBytes = context.assets.open(modelName).readBytes()
             val opts = OrtSession.SessionOptions().apply {
-                setIntraOpNumThreads(4); setInterOpNumThreads(2)
-                addConfigEntry("session.intra_op.allow_spinning", "1")
+                setIntraOpNumThreads(2)
+                setInterOpNumThreads(1)
+                addConfigEntry("session.intra_op.allow_spinning", "0")
                 addConfigEntry("session.use_device_allocator_for_initializers", "1")
+                setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
                 if (provider == ExecutionProvider.NNAPI) {
                     try { addNnapi(); Log.i(TAG, "NNAPI Active") } catch (e: Exception) { currentProvider = ExecutionProvider.CPU }
                 }
             }
             ortSession = ortEnv?.createSession(modelBytes, opts)
+            
+            // Log Input/Output info for debugging
+            ortSession?.let { session ->
+                session.inputInfo.forEach { (name, info) -> Log.i(TAG, "Input: $name, Shape: ${(info.info as? ai.onnxruntime.TensorInfo)?.shape?.contentToString()}") }
+                session.outputInfo.forEach { (name, info) -> Log.i(TAG, "Output: $name, Shape: ${(info.info as? ai.onnxruntime.TensorInfo)?.shape?.contentToString()}") }
+            }
+
             val inputInfo = ortSession?.inputInfo?.entries?.iterator()?.next()
             inputName = inputInfo?.key ?: "input"
             val inputShape = (inputInfo?.value?.info as? ai.onnxruntime.TensorInfo)?.shape
@@ -123,20 +136,22 @@ class RailDetector(context: Context) : AutoCloseable {
             val pb = pixelBuffer!!
             bitmap.getPixels(pb, 0, MODEL_W, 0, 0, MODEL_W, MODEL_H)
 
-            // 4. Normalization (FIXED: removed double division)
+            // 4. Normalization (Optimized with FloatArray bulk put)
             val rScale = 1.0f / (255f * STD[0]); val gScale = 1.0f / (255f * STD[1]); val bScale = 1.0f / (255f * STD[2])
             val rOff = -MEAN[0] / STD[0]; val gOff = -MEAN[1] / STD[1]; val bOff = -MEAN[2] / STD[2]
             
             val ib = inputBuffer!!; ib.clear()
+            val floatArr = FloatArray(count * 3) // Bulk fill array
             for (i in 0 until count) {
                 val px = pb[i]
-                ib.put(i, ((px shr 16) and 0xFF) * rScale + rOff)
-                ib.put(i + count, ((px shr 8) and 0xFF) * gScale + gOff)
-                ib.put(i + 2 * count, (px and 0xFF) * bScale + bOff)
+                floatArr[i] = ((px shr 16) and 0xFF) * rScale + rOff
+                floatArr[i + count] = ((px shr 8) and 0xFF) * gScale + gOff
+                floatArr[i + 2 * count] = (px and 0xFF) * bScale + bOff
             }
+            ib.put(floatArr)
             ib.rewind()
             val tPrepEnd = android.os.SystemClock.elapsedRealtimeNanos()
-            profiler?.record(PipelineProfiler.Stage.NORMALIZATION, (tPrepEnd - t0) / 1e6 * 0.2) // Simplified split
+            profiler?.record(PipelineProfiler.Stage.NORMALIZATION, (tPrepEnd - t0) / 1e6 * 0.2)
 
             // 5. Tensor creation
             val tTensor0 = android.os.SystemClock.elapsedRealtimeNanos()
@@ -150,26 +165,27 @@ class RailDetector(context: Context) : AutoCloseable {
             val results = session.run(mapOf(inputName to inputTensor))
             profiler?.record(PipelineProfiler.Stage.INFERENCE, (android.os.SystemClock.elapsedRealtimeNanos() - tInf0) / 1e6)
 
-            // 7. Heatmap extraction
+            // 7. DIRECT Heatmap extraction (Bypass slow Java Array conversion)
             val tExt0 = android.os.SystemClock.elapsedRealtimeNanos()
-            val rawOutput = results[0].value
-            val hmL = hmLBuffer!!; val hmR = hmRBuffer!!
-            if (rawOutput is Array<*>) {
-                val tensor = if (rawOutput[0] is Array<*>) rawOutput[0] as Array<*> else rawOutput
-                val chanL = tensor[0] as Array<FloatArray>; val chanR = tensor[1] as Array<FloatArray>
-                for (y in 0 until MODEL_H) { System.arraycopy(chanL[y], 0, hmL, y * MODEL_W, MODEL_W); System.arraycopy(chanR[y], 0, hmR, y * MODEL_W, MODEL_W) }
-            } else if (rawOutput is FloatArray) {
-                System.arraycopy(rawOutput, 0, hmL, 0, count); System.arraycopy(rawOutput, count, hmR, 0, count)
+            val outputTensor = results[0] as ai.onnxruntime.OnnxTensor
+            val outBuffer = outputTensor.floatBuffer
+            
+            val result = if (outBuffer.capacity() == 96) {
+                // COORDINATE MODEL (16*6 = 96)
+                val coords = FloatArray(96)
+                outBuffer.get(coords)
+                decodeCoordinates(coords)
+            } else {
+                // HEATMAP MODEL (Direct copy)
+                val hmL = hmLBuffer!!; val hmR = hmRBuffer!!
+                outBuffer.get(hmL, 0, count)
+                outBuffer.get(hmR, 0, count)
+                decodeHeatmap(hmL, hmR)
             }
             profiler?.record(PipelineProfiler.Stage.HEATMAP_EXTRACTION, (android.os.SystemClock.elapsedRealtimeNanos() - tExt0) / 1e6)
 
             inputTensor.close(); results.close(); bitmap.recycle()
-
-            // 8. Decoder stages
-            val tDec0 = android.os.SystemClock.elapsedRealtimeNanos()
-            val result = decodeHeatmap(hmL, hmR)
-            profiler?.record(PipelineProfiler.Stage.DECODER_TOTAL, (android.os.SystemClock.elapsedRealtimeNanos() - tDec0) / 1e6)
-
+            
             val totalPoints = (result.primaryTrack?.first?.points?.size ?: 0) + (result.primaryTrack?.second?.points?.size ?: 0)
             profiler?.recordAiMetrics(totalPoints, result.primaryTrack != null, result.secondaryTracks.size, false, false)
             result
@@ -179,25 +195,70 @@ class RailDetector(context: Context) : AutoCloseable {
         }
     }
 
+    private fun decodeCoordinates(coords: FloatArray): DetectionResult {
+        // coords is 96 elements: [16 LeftX, 16 RightX, 16 LeftY, 16 RightY, 16 LeftV, 16 RightV]
+        val leftPoints = mutableListOf<RailPoint>()
+        val rightPoints = mutableListOf<RailPoint>()
+        
+        var leftConfTotal = 0f
+        var rightConfTotal = 0f
+        
+        for (i in 0 until 16) {
+            val lv = coords[64 + i]
+            val rv = coords[80 + i]
+            
+            if (lv > 0.3f) {
+                leftPoints.add(RailPoint(coords[i], coords[32 + i]))
+                leftConfTotal += lv
+            }
+            if (rv > 0.3f) {
+                rightPoints.add(RailPoint(coords[16 + i], coords[48 + i]))
+                rightConfTotal += rv
+            }
+        }
+        
+        if (leftPoints.size < 3 || rightPoints.size < 3) return DetectionResult(null)
+        
+        val leftCurve = RailCurve(leftPoints, leftConfTotal / 16f)
+        val rightCurve = RailCurve(rightPoints, rightConfTotal / 16f)
+        
+        return DetectionResult(leftCurve to rightCurve, emptyList(), (leftConfTotal + rightConfTotal) / 32f)
+    }
+
     private fun imageProxyToScaledBitmap(imageProxy: ImageProxy, targetWidth: Int, targetHeight: Int, profiler: PipelineProfiler?): Bitmap? {
         val t0 = android.os.SystemClock.elapsedRealtimeNanos()
+        
+        // 1. Get the bitmap (CameraX handles rotation if we use toBitmap() on newer versions, 
+        // but we'll stick to manual to be safe across all devices).
         val bitmap = try { imageProxy.toBitmap() } catch (e: Exception) { return null }
         val t1 = android.os.SystemClock.elapsedRealtimeNanos()
         
+        // 2. Create the target bitmap
+        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(result)
+        
+        // 3. Calculate rotation and scaling
         val rotation = imageProxy.imageInfo.rotationDegrees
-        val matrix = Matrix().apply { 
-            if (rotation != 0) postRotate(rotation.toFloat())
-            val rw = if (rotation % 180 == 0) bitmap.width else bitmap.height
-            val rh = if (rotation % 180 == 0) bitmap.height else bitmap.width
-            val scale = max(targetWidth.toFloat() / rw, targetHeight.toFloat() / rh)
-            postScale(scale, scale)
-        }
+        val matrix = Matrix()
         
-        val processed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        val result = Bitmap.createBitmap(processed, (processed.width - targetWidth) / 2, (processed.height - targetHeight) / 2, targetWidth, targetHeight)
+        // Apply rotation around the center of the source image
+        matrix.postRotate(rotation.toFloat(), bitmap.width / 2f, bitmap.height / 2f)
         
-        if (processed != result && processed != bitmap) processed.recycle()
-        if (bitmap != result) bitmap.recycle()
+        // After rotation, we need to know the new width/height to scale correctly
+        val rotatedW = if (rotation % 180 == 0) bitmap.width else bitmap.height
+        val rotatedH = if (rotation % 180 == 0) bitmap.height else bitmap.width
+        
+        val scale = max(targetWidth.toFloat() / rotatedW, targetHeight.toFloat() / rotatedH)
+        matrix.postScale(scale, scale, bitmap.width / 2f, bitmap.height / 2f)
+        
+        // Finally, translate the center of the transformed image to the center of our target bitmap
+        // The center of the source bitmap (after rotation and scale) is still at (W_src/2, H_src/2) 
+        // relative to its own coordinate system if we rotate about center.
+        // We want that center to land at (targetWidth/2, targetHeight/2).
+        matrix.postTranslate(targetWidth / 2f - bitmap.width / 2f, targetHeight / 2f - bitmap.height / 2f)
+        
+        canvas.drawBitmap(bitmap, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        bitmap.recycle()
         
         val t2 = android.os.SystemClock.elapsedRealtimeNanos()
         profiler?.record(PipelineProfiler.Stage.YUV_TO_RGB, (t1 - t0) / 1e6)

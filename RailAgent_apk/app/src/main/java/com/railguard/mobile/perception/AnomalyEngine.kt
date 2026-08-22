@@ -29,9 +29,9 @@ data class AnomalyResult(
 )
 
 class AnomalyEngine(
-    private val warningFrameThreshold: Int = 6, // Increased from 3
-    private val anomalyFrameThreshold: Int = 15, // Increased from 8
-    private val recoveryFrameThreshold: Int = 10, // Increased from 5
+    private val warningFrameThreshold: Int = 4,  // ~2.0s at 2fps
+    private val anomalyFrameThreshold: Int = 10, // ~5.0s at 2fps
+    private val recoveryFrameThreshold: Int = 6,  // ~3.0s at 2fps
 ) {
 
     private var suspiciousFrames = 0
@@ -60,7 +60,7 @@ class AnomalyEngine(
         if (!geometry.valid) {
 
             return processSuspiciousFrame(
-                score = 0.85f,
+                score = 0.80f,
                 reason = AnomalyReason.INVALID_RAIL_GEOMETRY,
                 trackStable = false,
             )
@@ -82,7 +82,7 @@ class AnomalyEngine(
         // Determine whether this frame is suspicious
         // -------------------------------------------------------------
 
-        val suspicious = score >= 0.45f
+        val suspicious = score >= 0.75f
 
         return if (suspicious) {
 
@@ -116,48 +116,34 @@ class AnomalyEngine(
         // 1. Rail confidence
         // -------------------------------------------------------------
 
+        // 1. Rail confidence (static)
         val confidenceEvidence =
-            (
-                    1.0f - tracking.trackingConfidence
-                    ).coerceIn(0.0f, 1.0f)
+            (1.0f - tracking.geometry.confidence).coerceIn(0.0f, 1.0f)
 
-        // -------------------------------------------------------------
         // 2. Gauge variation
-        // -------------------------------------------------------------
-
         val gaugeEvidence =
-            (
-                    geometry.gaugeVariation / 0.25f
-                    ).coerceIn(0.0f, 1.0f)
+            (geometry.gaugeVariation / 0.40f).coerceIn(0.0f, 1.0f)
 
-        // -------------------------------------------------------------
         // 3. Curvature change
-        // -------------------------------------------------------------
-
         val curvatureEvidence =
             calculateCurvatureChange(
                 current = geometry,
                 previous = previousGeometry
             )
 
-        // -------------------------------------------------------------
-        // 4. Temporal instability
-        // -------------------------------------------------------------
-
+        // 4. Temporal instability (Motion)
         val temporalEvidence =
-            (
-                    1.0f - tracking.trackingConfidence
-                    ).coerceIn(0.0f, 1.0f)
+            (1.0f - tracking.trackingConfidence).coerceIn(0.0f, 1.0f)
 
         // -------------------------------------------------------------
         // Weighted anomaly score
         // -------------------------------------------------------------
 
         val score = (
-                (confidenceEvidence * 0.30f) +
-                        (gaugeEvidence * 0.30f) +
-                        (curvatureEvidence * 0.20f) +
-                        (temporalEvidence * 0.20f)
+                (confidenceEvidence * 0.25f) +
+                (gaugeEvidence * 0.45f) +
+                (curvatureEvidence * 0.15f) +
+                (temporalEvidence * 0.15f)
                 ).coerceIn(0.0f, 1.0f)
 
         // -------------------------------------------------------------

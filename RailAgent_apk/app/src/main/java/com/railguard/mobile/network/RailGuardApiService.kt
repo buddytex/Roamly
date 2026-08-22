@@ -10,14 +10,14 @@ import retrofit2.http.Part
 
 interface RailGuardApiService {
 
-    @POST("heartbeat")
+    @POST("api/heartbeat")
     suspend fun sendHeartbeat(@Body request: HeartbeatRequest): Response<PiResponse>
 
-    @POST("event")
+    @POST("api/events")
     suspend fun logEvent(@Body request: EventRequest): Response<PiResponse>
 
     @Multipart
-    @POST("upload")
+    @POST("api/upload")
     suspend fun uploadImage(
         @Part("device_id") deviceId: RequestBody,
         @Part("event_id") eventId: RequestBody?,
