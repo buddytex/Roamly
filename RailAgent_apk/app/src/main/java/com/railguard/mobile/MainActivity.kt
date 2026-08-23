@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
+import kotlin.math.abs
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -153,6 +154,8 @@ fun RailGuardScreen() {
     var executionProvider by remember { mutableStateOf(RailDetector.ExecutionProvider.CPU) }
     val detector = remember { RailDetector(context) }
     
+    var lastSentAnomalyTime by remember { mutableLongStateOf(0L) }
+
     // SENSOR LIFECYCLE
     LaunchedEffect(Unit) {
         imuManager.start()
@@ -161,6 +164,67 @@ fun RailGuardScreen() {
 
     LaunchedEffect(locationPermissionGranted) {
         if (locationPermissionGranted) locationManager.startUpdates()
+    }
+
+    // AUTOMATIC ANOMALY LOGGING WITH GPS TO PI SERVER
+    LaunchedEffect(latestAnomaly) {
+        val anomaly = latestAnomaly
+        if (isMonitoring && anomaly != null && (anomaly.state == AnomalyState.ANOMALY || anomaly.state == AnomalyState.WARNING)) {
+            val now = System.currentTimeMillis()
+            if (now - lastSentAnomalyTime > 3000L) { // Debounce 3s between repeat logs
+                lastSentAnomalyTime = now
+                val netGps = if (gpsData.hasData) {
+                    NetworkGps(
+                        latitude = gpsData.latitude,
+                        longitude = gpsData.longitude,
+                        speed = gpsData.speed,
+                        altitude = gpsData.altitude
+                    )
+                } else null
+                
+                try {
+                    networkManager.logEvent(
+                        type = if (anomaly.state == AnomalyState.ANOMALY) "CRITICAL_DEFECT" else "GEOMETRY_WARNING",
+                        severity = if (anomaly.state == AnomalyState.ANOMALY) "CRITICAL" else "WARNING",
+                        message = "${anomaly.reason.name} detected (Score: ${(anomaly.anomalyScore * 100).toInt()}%)",
+                        gps = netGps,
+                        metadata = mapOf(
+                            "defect_type" to anomaly.reason.name,
+                            "anomaly_score" to "%.2f".format(anomaly.anomalyScore),
+                            "suspicious_frames" to anomaly.suspiciousFrames.toString(),
+                            "lat" to "%.6f".format(gpsData.latitude),
+                            "lon" to "%.6f".format(gpsData.longitude)
+                        )
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    // PERIODIC HEARTBEAT WITH GPS
+    LaunchedEffect(isMonitoring) {
+        while (isMonitoring) {
+            val netGps = if (gpsData.hasData) {
+                NetworkGps(
+                    latitude = gpsData.latitude,
+                    longitude = gpsData.longitude,
+                    speed = gpsData.speed,
+                    altitude = gpsData.altitude
+                )
+            } else null
+            
+            try {
+                networkManager.sendHeartbeat(
+                    status = if (latestAnomaly?.state == AnomalyState.ANOMALY) "ANOMALY" else "MONITORING",
+                    gps = netGps
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            kotlinx.coroutines.delay(2000L)
+        }
     }
 
     DisposableEffect(Unit) {
@@ -309,16 +373,77 @@ fun RailGuardScreen() {
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // GPS & Speed Card
-                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                        Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column {
-                                Text("Speed", fontSize = 12.sp, color = Color.Gray)
-                                Text("%.1f km/h".format(gpsData.speed * 3.6f), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    // GPS & Location Telemetry Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🛰", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("GPS Telemetry", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Text(
+                                    text = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) {
+                                        "${gpsData.provider} (±%.1fm)".format(gpsData.accuracy)
+                                    } else "SEARCHING FIX",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) Color(0xFF16A34A) else Color(0xFFF59E0B)
+                                )
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("Altitude", fontSize = 12.sp, color = Color.Gray)
-                                Text("%.1f m".format(gpsData.altitude), fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // Coordinates Row: Latitude & Longitude
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("LATITUDE", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) {
+                                            "%.6f° %s".format(abs(gpsData.latitude), if (gpsData.latitude >= 0) "N" else "S")
+                                        } else "Awaiting Fix...",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) Color.White else Color.Gray
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                    Text("LONGITUDE", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) {
+                                            "%.6f° %s".format(abs(gpsData.longitude), if (gpsData.longitude >= 0) "E" else "W")
+                                        } else "Awaiting Fix...",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) Color.White else Color.Gray
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f), thickness = 0.5.dp)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            // Speed & Altitude Row
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column {
+                                    Text("SPEED", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                                    Text("%.1f km/h".format(gpsData.speed * 3.6f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("ALTITUDE", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                                    Text("%.1f m".format(gpsData.altitude), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                }
                             }
                         }
                     }
