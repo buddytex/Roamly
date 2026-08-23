@@ -102,16 +102,45 @@ fun RailGuardScreen() {
         )
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> cameraPermissionGranted = granted }
-    val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-        val fine = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        locationPermissionGranted = fine || coarse
+    val locationManager = remember { LocationManager(context) }
+    val gpsData by locationManager.gpsData.collectAsState()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions.containsKey(Manifest.permission.CAMERA)) {
+            cameraPermissionGranted = permissions[Manifest.permission.CAMERA] == true
+        } else {
+            cameraPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        }
+        
+        val fine = permissions[Manifest.permission.ACCESS_FINE_LOCATION]
+        val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION]
+        if (fine != null || coarse != null) {
+            locationPermissionGranted = (fine == true) || (coarse == true)
+        } else {
+            locationPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        }
+        
+        if (locationPermissionGranted) {
+            locationManager.startUpdates()
+        }
     }
 
     LaunchedEffect(Unit) {
-        if (!cameraPermissionGranted) permissionLauncher.launch(Manifest.permission.CAMERA)
-        if (!locationPermissionGranted) locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        val needed = mutableListOf<String>()
+        if (!cameraPermissionGranted) needed.add(Manifest.permission.CAMERA)
+        if (!locationPermissionGranted) {
+            needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (needed.isNotEmpty()) {
+            permissionLauncher.launch(needed.toTypedArray())
+        }
+        if (locationPermissionGranted) {
+            locationManager.startUpdates()
+        }
     }
 
     var processedFrames by remember { mutableLongStateOf(0L) }
@@ -124,9 +153,6 @@ fun RailGuardScreen() {
 
     val imuManager = remember { ImuManager(context) }
     val orientation by imuManager.orientation.collectAsStateWithLifecycle()
-
-    val locationManager = remember { LocationManager(context) }
-    val gpsData by locationManager.gpsData.collectAsStateWithLifecycle()
 
     val networkManager = remember { NetworkManager(context) }
     val isServerOnline by networkManager.isServerOnline.collectAsStateWithLifecycle()
@@ -341,6 +367,32 @@ fun RailGuardScreen() {
                                 detector = detector,
                                 modifier = Modifier.fillMaxSize()
                             )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable {
+                                        permissionLauncher.launch(
+                                            arrayOf(
+                                                Manifest.permission.CAMERA,
+                                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                                Manifest.permission.ACCESS_COARSE_LOCATION
+                                            )
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("📷", fontSize = 28.sp)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        "Tap to Enable Camera & GPS",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -380,7 +432,19 @@ fun RailGuardScreen() {
 
                     // GPS & Location Telemetry Card
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (!locationPermissionGranted) {
+                                    permissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                }
+                                locationManager.startUpdates()
+                            },
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                     ) {
@@ -396,12 +460,18 @@ fun RailGuardScreen() {
                                     Text("GPS Telemetry", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                 }
                                 Text(
-                                    text = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) {
-                                        "${gpsData.provider} (±%.1fm)".format(gpsData.accuracy)
-                                    } else "SEARCHING FIX",
+                                    text = when {
+                                        gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0) -> "${gpsData.provider} (±%.1fm)".format(gpsData.accuracy)
+                                        !locationPermissionGranted -> "PERMISSION NEEDED"
+                                        else -> "ACQUIRING FIX..."
+                                    },
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0)) Color(0xFF16A34A) else Color(0xFFF59E0B)
+                                    color = when {
+                                        gpsData.hasData && (gpsData.latitude != 0.0 || gpsData.longitude != 0.0) -> Color(0xFF16A34A)
+                                        !locationPermissionGranted -> Color(0xFFDC2626)
+                                        else -> Color(0xFFF59E0B)
+                                    }
                                 )
                             }
                             
@@ -448,6 +518,25 @@ fun RailGuardScreen() {
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text("ALTITUDE", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.SemiBold)
                                     Text("%.1f m".format(gpsData.altitude), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+
+                            if (!gpsData.hasData) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF2563EB).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .clickable { locationManager.simulateLocation() }
+                                        .padding(vertical = 6.dp, horizontal = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "📍 Tap here to simulate test GPS coordinates (Indoor Test)",
+                                        color = Color(0xFF60A5FA),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }

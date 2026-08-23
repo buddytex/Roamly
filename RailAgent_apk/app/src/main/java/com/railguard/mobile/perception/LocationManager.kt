@@ -5,12 +5,13 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager as AndroidLocationManager
-import android.os.Bundle
+import android.os.Looper
+import android.util.Log
+import com.google.android.gms.location.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
-import android.util.Log
 
 data class GpsData(
     val latitude: Double = 0.0,
@@ -25,7 +26,9 @@ data class GpsData(
 
 class LocationManager(context: Context) {
 
-    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as AndroidLocationManager
+    private val appContext = context.applicationContext
+    private val legacyLocationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as AndroidLocationManager
+    private val fusedLocationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(appContext)
     
     private val _gpsData = MutableStateFlow(GpsData())
     val gpsData: StateFlow<GpsData> = _gpsData.asStateFlow()
@@ -33,65 +36,84 @@ class LocationManager(context: Context) {
     private var lastLocation: Location? = null
     private var smoothedSpeed = 0f
 
-    private val locationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            var currentSpeed = if (location.hasSpeed()) location.speed else 0f
-            
-            // GPS Jitter / Drift Filtering
-            lastLocation?.let { last ->
-                val timeDeltaSeconds = (location.time - last.time) / 1000.0f
-                if (timeDeltaSeconds > 0) {
-                    val distance = last.distanceTo(location)
-                    
-                    // DRIFT FILTER: Standard GPS drift when stationary is ~0.5 to 2 meters.
-                    // If distance moved is less than the accuracy margin (e.g. 3m), ignore it.
-                    val driftThreshold = if (location.accuracy > 0) location.accuracy * 0.6f else 1.5f
-                    
-                    if (distance > driftThreshold) {
-                        val calculatedSpeed = distance / timeDeltaSeconds
-                        // Use calculated speed only if hardware speed is zero or inconsistent
-                        if (currentSpeed <= 0.2f && calculatedSpeed > 0.2f) {
-                            currentSpeed = calculatedSpeed
-                        }
-                    } else {
-                        // Within drift range, hardware speed is likely jitter too if it's low
-                        if (currentSpeed < 0.5f) {
-                            currentSpeed = 0f
-                        }
+    private var pollingJob: Job? = null
+    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    init {
+        try {
+            startUpdates()
+        } catch (e: Exception) {
+            Log.w("RailGuardGPS", "Auto startUpdates in init failed", e)
+        }
+    }
+
+    fun handleNewLocation(location: Location, providerTag: String) {
+        if (location.latitude == 0.0 && location.longitude == 0.0) return
+
+        var currentSpeed = if (location.hasSpeed()) location.speed else 0f
+        
+        lastLocation?.let { last ->
+            val timeDeltaSeconds = (location.time - last.time) / 1000.0f
+            if (timeDeltaSeconds > 0) {
+                val distance = last.distanceTo(location)
+                val driftThreshold = if (location.accuracy > 0) location.accuracy * 0.6f else 1.5f
+                if (distance > driftThreshold) {
+                    val calculatedSpeed = distance / timeDeltaSeconds
+                    if (currentSpeed <= 0.2f && calculatedSpeed > 0.2f) {
+                        currentSpeed = calculatedSpeed
                     }
+                } else {
+                    if (currentSpeed < 0.5f) currentSpeed = 0f
                 }
             }
-            
-            // Smoothing Filter (Alpha = 0.4)
-            // If currentSpeed is 0, we decay faster (Alpha = 0.8) to reach 0 immediately on stop
-            val alpha = if (currentSpeed == 0f) 0.8f else 0.4f
-            smoothedSpeed = (smoothedSpeed * (1f - alpha)) + (currentSpeed * alpha)
-            
-            // Hard threshold to force zero for stationary state (0.3m/s is ~1km/h)
-            if (smoothedSpeed < 0.3f) smoothedSpeed = 0f
-
-            lastLocation = location
-            
-            Log.d("RailGuardGPS", "GPS: Lat=${location.latitude}, Spd=${currentSpeed}m/s, Smoothed=${smoothedSpeed}m/s, Acc=${location.accuracy}m")
-
-            _gpsData.value = GpsData(
-                latitude = location.latitude,
-                longitude = location.longitude,
-                altitude = location.altitude,
-                speed = smoothedSpeed,
-                accuracy = location.accuracy,
-                timestamp = location.time,
-                provider = location.provider ?: "GPS",
-                hasData = true
-            )
         }
+        
+        val alpha = if (currentSpeed == 0f) 0.8f else 0.4f
+        smoothedSpeed = (smoothedSpeed * (1f - alpha)) + (currentSpeed * alpha)
+        if (smoothedSpeed < 0.3f) smoothedSpeed = 0f
 
-        @Deprecated("Deprecated in Java")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-        override fun onProviderEnabled(provider: String) {
-            startUpdates()
+        lastLocation = location
+        Log.i("RailGuardGPS", "[$providerTag] Lat=${location.latitude}, Lon=${location.longitude}, Acc=${location.accuracy}m")
+
+        _gpsData.value = GpsData(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            altitude = location.altitude,
+            speed = smoothedSpeed,
+            accuracy = location.accuracy,
+            timestamp = location.time,
+            provider = providerTag,
+            hasData = true
+        )
+    }
+
+    fun simulateLocation() {
+        val loc = Location("MANUAL").apply {
+            latitude = 12.971598
+            longitude = 77.594562
+            altitude = 920.0
+            speed = 7.2f
+            accuracy = 2.5f
+            time = System.currentTimeMillis()
         }
-        override fun onProviderDisabled(provider: String) {}
+        handleNewLocation(loc, "SIMULATED")
+    }
+
+    private val fusedCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            for (location in result.locations) {
+                handleNewLocation(location, "FUSED")
+            }
+        }
+        override fun onLocationAvailability(avail: LocationAvailability) {
+            Log.d("RailGuardGPS", "Fused availability: isAvailable=${avail.isLocationAvailable}")
+        }
+    }
+
+    private val legacyListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            handleNewLocation(location, location.provider ?: "GPS")
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -99,46 +121,82 @@ class LocationManager(context: Context) {
         try {
             stopUpdates()
 
-            // 1. Immediately scan all providers for last known location so coordinates appear in < 0.1s
-            var bestLocation: Location? = null
-            val allProviders = locationManager.allProviders
-            for (provider in allProviders) {
-                val loc = try { locationManager.getLastKnownLocation(provider) } catch (e: Exception) { null }
-                if (loc != null) {
-                    if (bestLocation == null || loc.time > bestLocation.time) {
-                        bestLocation = loc
-                    }
-                }
+            // 1. Immediately poll all caches (Fused + System)
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) handleNewLocation(loc, "FUSED_CACHE")
             }
 
-            bestLocation?.let {
-                locationListener.onLocationChanged(it)
+            for (p in legacyLocationManager.allProviders) {
+                try {
+                    val loc = legacyLocationManager.getLastKnownLocation(p)
+                    if (loc != null && !_gpsData.value.hasData) handleNewLocation(loc, p)
+                } catch (e: Exception) {}
             }
 
-            // 2. Request live updates from all enabled location providers (GPS, Network, Passive, Fused)
-            for (provider in allProviders) {
-                if (locationManager.isProviderEnabled(provider)) {
-                    try {
-                        locationManager.requestLocationUpdates(
+            // 2. Fused Location Real-time Stream (Fast 1s interval)
+            val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                .setMinUpdateIntervalMillis(500L)
+                .setMinUpdateDistanceMeters(0f)
+                .setWaitForAccurateLocation(false)
+                .build()
+
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                fusedCallback,
+                Looper.getMainLooper()
+            ).addOnSuccessListener {
+                Log.d("RailGuardGPS", "Fused location stream registered")
+            }.addOnFailureListener { e ->
+                Log.w("RailGuardGPS", "Fused location stream failed", e)
+            }
+
+            // 3. System LocationManager Real-time Streams (GPS + Network + Passive)
+            val legacyProviders = listOf(
+                AndroidLocationManager.GPS_PROVIDER,
+                AndroidLocationManager.NETWORK_PROVIDER,
+                AndroidLocationManager.PASSIVE_PROVIDER
+            )
+            for (provider in legacyProviders) {
+                try {
+                    if (legacyLocationManager.isProviderEnabled(provider)) {
+                        legacyLocationManager.requestLocationUpdates(
                             provider,
                             500L,
                             0f,
-                            locationListener
+                            legacyListener,
+                            Looper.getMainLooper()
                         )
-                        Log.i("RailGuardGPS", "Registered location listener on provider: $provider")
-                    } catch (e: Exception) {
-                        Log.w("RailGuardGPS", "Could not register listener for provider: $provider", e)
                     }
+                } catch (e: Exception) {}
+            }
+
+            // 4. Active Poller every 2s until first coordinates locked
+            pollingJob = coroutineScope.launch {
+                while (isActive) {
+                    if (!_gpsData.value.hasData) {
+                        try {
+                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
+                                .addOnSuccessListener { loc -> if (loc != null) handleNewLocation(loc, "NETWORK") }
+                            
+                            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                                .addOnSuccessListener { loc -> if (loc != null) handleNewLocation(loc, "GPS") }
+                        } catch (e: Exception) {}
+                    }
+                    delay(2000L)
                 }
             }
+
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("RailGuardGPS", "Error in startUpdates", e)
         }
     }
 
     fun stopUpdates() {
         try {
-            locationManager.removeUpdates(locationListener)
+            pollingJob?.cancel()
+            pollingJob = null
+            fusedLocationClient.removeLocationUpdates(fusedCallback)
+            legacyLocationManager.removeUpdates(legacyListener)
         } catch (e: Exception) {
             e.printStackTrace()
         }

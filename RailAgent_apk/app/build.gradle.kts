@@ -72,4 +72,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.gson)
+    // Play Services Location (Fused Location Provider)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 }
