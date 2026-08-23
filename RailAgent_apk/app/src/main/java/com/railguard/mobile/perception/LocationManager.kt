@@ -97,53 +97,50 @@ class LocationManager(context: Context) {
     @SuppressLint("MissingPermission")
     fun startUpdates() {
         try {
-            // Stop any existing updates first to avoid duplicates
             stopUpdates()
 
-            // Request from GPS for high accuracy (1Hz update rate)
-            if (locationManager.isProviderEnabled(AndroidLocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    AndroidLocationManager.GPS_PROVIDER,
-                    500L, // Request every 500ms
-                    0f,   // 0 meters to ensure time-based updates
-                    locationListener
-                )
-            }
-            
-            // Request from Network as a faster/indoor fallback
-            if (locationManager.isProviderEnabled(AndroidLocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    AndroidLocationManager.NETWORK_PROVIDER,
-                    1000L,
-                    0f,
-                    locationListener
-                )
-            }
-            
-            // Immediately check for last known location to show something
-            val lastGps = locationManager.getLastKnownLocation(AndroidLocationManager.GPS_PROVIDER)
-            val lastNetwork = locationManager.getLastKnownLocation(AndroidLocationManager.NETWORK_PROVIDER)
-            
-            val bestLocation = when {
-                lastGps != null && lastNetwork != null -> {
-                    if (lastGps.time > lastNetwork.time - 30000) lastGps else lastNetwork
-                }
-                lastGps != null -> lastGps
-                else -> lastNetwork
-            }
-            
-            bestLocation?.let { 
-                if (_gpsData.value.timestamp < it.time) {
-                    locationListener.onLocationChanged(it)
+            // 1. Immediately scan all providers for last known location so coordinates appear in < 0.1s
+            var bestLocation: Location? = null
+            val allProviders = locationManager.allProviders
+            for (provider in allProviders) {
+                val loc = try { locationManager.getLastKnownLocation(provider) } catch (e: Exception) { null }
+                if (loc != null) {
+                    if (bestLocation == null || loc.time > bestLocation.time) {
+                        bestLocation = loc
+                    }
                 }
             }
-            
+
+            bestLocation?.let {
+                locationListener.onLocationChanged(it)
+            }
+
+            // 2. Request live updates from all enabled location providers (GPS, Network, Passive, Fused)
+            for (provider in allProviders) {
+                if (locationManager.isProviderEnabled(provider)) {
+                    try {
+                        locationManager.requestLocationUpdates(
+                            provider,
+                            500L,
+                            0f,
+                            locationListener
+                        )
+                        Log.i("RailGuardGPS", "Registered location listener on provider: $provider")
+                    } catch (e: Exception) {
+                        Log.w("RailGuardGPS", "Could not register listener for provider: $provider", e)
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
     fun stopUpdates() {
-        locationManager.removeUpdates(locationListener)
+        try {
+            locationManager.removeUpdates(locationListener)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
