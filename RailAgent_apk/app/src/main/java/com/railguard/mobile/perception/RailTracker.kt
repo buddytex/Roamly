@@ -29,6 +29,10 @@ class RailTracker(
         if (detectedLeft == null || detectedRight == null) {
             consecutiveBadFrames++
             consecutiveGoodFrames = 0
+            if (consecutiveBadFrames > 8) {
+                previousLeft = null
+                previousRight = null
+            }
             return TrackingResult(
                 left = previousLeft,
                 right = previousRight,
@@ -37,8 +41,8 @@ class RailTracker(
                 } else {
                     invalidGeometry()
                 },
-                trackingConfidence = 0.0f,
-                stable = false
+                trackingConfidence = (0.5f - consecutiveBadFrames * 0.05f).coerceAtLeast(0.0f),
+                stable = previousLeft != null && consecutiveBadFrames < 4
             )
         }
 

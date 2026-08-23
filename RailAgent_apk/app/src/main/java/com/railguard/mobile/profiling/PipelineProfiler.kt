@@ -20,7 +20,7 @@ class PipelineProfiler {
 
     companion object {
         private const val TAG = "RailGuardProfile"
-        private const val REPORT_INTERVAL_FRAMES = 1
+        private const val REPORT_INTERVAL_FRAMES = 5 // Faster feedback during debugging
         private const val MAX_SAMPLES = 300
     }
 
@@ -113,7 +113,9 @@ class PipelineProfiler {
             val report = generateReport(context)
             lastGeneratedReport = report
             Log.i(TAG, report)
-            if (context != null) saveReportToFile(context, report)
+            
+            // Stream to laptop instead of writing to disk
+            com.railguard.mobile.network.RemoteLogger.stream(report)
         }
     }
 

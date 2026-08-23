@@ -1,69 +1,22 @@
-# ==============================================================================
-# RailGuard AI — Global Git Ignore Specification
-# ==============================================================================
-
-# --- Python & Virtual Environments ---
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-.venv*/
-dist/
-build/
-*.egg-info/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# --- Android Studio & Gradle ---
-.gradle/
-build/
-app/build/
 *.iml
-.idea/
-local.properties
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
 .DS_Store
-Captures/
-*.apk
-*.aab
-*.ap_
-output.json
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
 
-# --- Secrets & Signing Keys ---
-*.keystore
-*.jks
-*.p8
-*.p12
-*.key
-*.pem
-*.secret
-*credentials*.json
-google-services.json
-.env
-.env.*
+hs_err_pid*.log
+replay_pid*.log
 
-# --- Heavy Raw Video & Training Datasets (>100MB / Non-repo assets) ---
-*.mp4
-*.avi
-*.mkv
-*.mov
-*.rar
-*.zip
-training_images/
-prepared_dataset*/
-railbench/
-*.tar.gz
-
-# --- IDE & OS Junk ---
-.vscode/
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.bak
-*.swp
-*~
+.idea/
+__pycache__/
+*.pyc

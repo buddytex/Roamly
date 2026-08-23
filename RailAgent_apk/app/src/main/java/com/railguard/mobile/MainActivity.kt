@@ -428,6 +428,8 @@ fun CameraPreview(
         AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx ->
             val previewView = PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
             val cameraExecutor = Executors.newSingleThreadExecutor()
+            val aiExecutor = Executors.newSingleThreadExecutor()
+            val isAiRunning = java.util.concurrent.atomic.AtomicBoolean(false)
             
             cameraProviderFuture.addListener({
                 try {
@@ -447,24 +449,55 @@ fun CameraPreview(
 
                     imageAnalysis.setAnalyzer(cameraExecutor) { image ->
                         if (monitoringState.value) {
-                            val t0 = android.os.SystemClock.elapsedRealtimeNanos()
-                            profiler?.startFrame(processedFramesCount, t0)
-                            
-                            val result = detector.detect(image, processedFramesCount, profiler)
-                            val tracking = tracker.update(result.primaryTrack?.first, result.primaryTrack?.second)
-                            
-                            primaryTrack = if (tracking.left != null && tracking.right != null) tracking.left!! to tracking.right!! else null
-                            secondaries = result.secondaryTracks
-                            val anomaly = anomalyEngine.update(tracking)
-                            lastAnomalyState = anomaly
-                            onAnomalyUpdated(anomaly)
-                            onFrameProcessed()
-                            
                             frameCounter++
-                            if (SystemClock.elapsedRealtime() - lastFpsTime >= 1000) { onFpsUpdated(frameCounter); frameCounter = 0; lastFpsTime = SystemClock.elapsedRealtime() }
-                            profiler?.endFrame(processedFramesCount, context)
+                            if (SystemClock.elapsedRealtime() - lastFpsTime >= 1000) { 
+                                onFpsUpdated(frameCounter)
+                                frameCounter = 0
+                                lastFpsTime = SystemClock.elapsedRealtime() 
+                            }
+
+                            if (isAiRunning.compareAndSet(false, true)) {
+                                // Extract and scale bitmap in ~2-3ms on camera thread, then immediately free CameraX buffer
+                                val scaledBitmap = try {
+                                    detector.imageProxyToScaledBitmap(image, RailDetector.MODEL_W, RailDetector.MODEL_H, profiler)
+                                } catch (e: Exception) {
+                                    null
+                                } finally {
+                                    image.close() // IMMEDIATELY release CameraX frame buffer to guarantee 30+ FPS stream!
+                                }
+
+                                if (scaledBitmap != null) {
+                                    aiExecutor.execute {
+                                        try {
+                                            val t0 = android.os.SystemClock.elapsedRealtimeNanos()
+                                            profiler?.startFrame(processedFramesCount, t0)
+                                            
+                                            val result = detector.detectBitmap(scaledBitmap, processedFramesCount, profiler)
+                                            val tracking = tracker.update(result.primaryTrack?.first, result.primaryTrack?.second)
+                                            
+                                            primaryTrack = if (tracking.left != null && tracking.right != null) tracking.left!! to tracking.right!! else null
+                                            secondaries = result.secondaryTracks
+                                            val anomaly = anomalyEngine.update(tracking)
+                                            lastAnomalyState = anomaly
+                                            onAnomalyUpdated(anomaly)
+                                            onFrameProcessed()
+                                            profiler?.endFrame(processedFramesCount, context)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        } finally {
+                                            scaledBitmap.recycle()
+                                            isAiRunning.set(false)
+                                        }
+                                    }
+                                } else {
+                                    isAiRunning.set(false)
+                                }
+                            } else {
+                                image.close()
+                            }
+                        } else {
+                            image.close()
                         }
-                        image.close()
                     }
                     
                     cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalysis)
@@ -555,6 +588,10 @@ fun DiagnosticsPanel(
     onTestNetwork: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isTestingLaptop by remember { mutableStateOf(false) }
+    var laptopTestResult by remember { mutableStateOf<String?>(null) }
+
     Column(modifier = Modifier.fillMaxWidth().padding(24.dp).verticalScroll(rememberScrollState())) {
         Text("System Diagnostics", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(modifier = Modifier.height(16.dp))
@@ -586,7 +623,72 @@ fun DiagnosticsPanel(
             shape = RoundedCornerShape(8.dp)
         )
         
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Laptop Log Streaming (Port 9999)", fontSize = 14.sp, color = Color.Gray)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        var laptopIpInput by remember { mutableStateOf(RemoteLogger.laptopIp) }
+        var isStreaming by remember { mutableStateOf(RemoteLogger.isEnabled) }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = laptopIpInput,
+                onValueChange = { 
+                    laptopIpInput = it
+                    RemoteLogger.laptopIp = it
+                },
+                label = { Text("Laptop IP", color = Color.Gray) },
+                modifier = Modifier.weight(1f),
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 14.sp),
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = isStreaming,
+                onCheckedChange = { 
+                    isStreaming = it
+                    RemoteLogger.isEnabled = it
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    isTestingLaptop = true
+                    laptopTestResult = RemoteLogger.sendTestPacket()
+                    isTestingLaptop = false
+                }
+            },
+            enabled = !isTestingLaptop,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            if (isTestingLaptop) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Sending UDP Test Packet...")
+            } else {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Send Test Packet to Laptop")
+            }
+        }
+
+        laptopTestResult?.let { result ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = result,
+                fontSize = 12.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                color = if (result.contains("SUCCESS")) Color.Green else Color(0xFFF87171)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
         
         Button(
             onClick = onTestNetwork,
