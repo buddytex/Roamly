@@ -20,3 +20,5 @@ replay_pid*.log
 .idea/
 __pycache__/
 *.pyc
+/app
+/listen_logs.py
