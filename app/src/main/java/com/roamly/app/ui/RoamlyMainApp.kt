@@ -70,6 +70,19 @@ import com.roamly.app.ui.theme.RoamlySurfaceVariant
 import com.roamly.app.ui.theme.RoamlyTextPrimary
 import com.roamly.app.ui.theme.RoamlyTextSecondary
 
+import androidx.compose.material3.CircularProgressIndicator
+import com.roamly.app.auth.model.ApprovalStatus
+import com.roamly.app.auth.model.AuthState
+import com.roamly.app.auth.model.AuthUser
+import com.roamly.app.auth.ui.AuthViewModel
+import com.roamly.app.ui.screens.auth.EmailVerificationNoticeScreen
+import com.roamly.app.ui.screens.auth.GuidePendingApprovalScreen
+import com.roamly.app.ui.screens.auth.GuideSignInScreen
+import com.roamly.app.ui.screens.auth.GuideSignUpScreen
+import com.roamly.app.ui.screens.auth.TravellerForgotPasswordScreen
+import com.roamly.app.ui.screens.auth.TravellerSignInScreen
+import com.roamly.app.ui.screens.auth.TravellerSignUpScreen
+
 enum class TravellerTab(val title: String, val icon: ImageVector) {
     HOME("Home", Icons.Default.Home),
     TRIPS("My Trips", Icons.Default.Map),
@@ -84,40 +97,172 @@ enum class GuideTab(val title: String, val icon: ImageVector) {
     PROFILE("Profile", Icons.Default.Person)
 }
 
+private enum class AuthScreenStep {
+    SIGN_IN,
+    SIGN_UP,
+    FORGOT_PASSWORD
+}
+
 @Composable
 fun RoamlyMainApp(
-    repository: RoamlyRepository
+    repository: RoamlyRepository,
+    authViewModel: AuthViewModel
 ) {
-    val selectedRole by repository.selectedRole.collectAsState()
+    val authState by authViewModel.authState.collectAsState()
+    val selectedPortal by authViewModel.selectedPortal.collectAsState()
 
-    // When no role has been chosen yet, display Role Selection Screen
-    if (selectedRole == null) {
-        RoleSelectionScreen(
-            onRoleSelected = { role ->
-                repository.setUserRole(role)
+    var travellerAuthStep by remember { mutableStateOf(AuthScreenStep.SIGN_IN) }
+    var guideAuthStep by remember { mutableStateOf(AuthScreenStep.SIGN_IN) }
+
+    when (val state = authState) {
+        is AuthState.Initializing -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(RoamlyBackground),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = RoamlyPrimary,
+                    strokeWidth = 3.dp
+                )
             }
-        )
-        return
-    }
+        }
 
-    // Role-specific Navigation
-    when (selectedRole) {
-        UserRole.TRAVELLER -> TravellerNavigationHost(
-            repository = repository,
-            onSwitchRole = { repository.clearUserRole() }
-        )
-        UserRole.GUIDE -> GuideNavigationHost(
-            repository = repository,
-            onSwitchRole = { repository.clearUserRole() }
-        )
-        null -> Unit
+        is AuthState.AwaitingEmailVerification -> {
+            EmailVerificationNoticeScreen(
+                email = state.email,
+                onBackToSignIn = {
+                    authViewModel.signOut()
+                    travellerAuthStep = AuthScreenStep.SIGN_IN
+                    guideAuthStep = AuthScreenStep.SIGN_IN
+                }
+            )
+        }
+
+        is AuthState.AwaitingGuideApproval -> {
+            GuidePendingApprovalScreen(
+                user = state.user,
+                onRefreshStatus = { authViewModel.restoreSession() },
+                onSignOut = { authViewModel.signOut() }
+            )
+        }
+
+        is AuthState.Authenticated -> {
+            val user = state.user
+            if (user.role == UserRole.GUIDE && user.approvalStatus == ApprovalStatus.APPROVED) {
+                GuideNavigationHost(
+                    repository = repository,
+                    currentUser = user,
+                    onSignOut = { authViewModel.signOut() }
+                )
+            } else {
+                TravellerNavigationHost(
+                    repository = repository,
+                    currentUser = user,
+                    onSignOut = { authViewModel.signOut() }
+                )
+            }
+        }
+
+        is AuthState.SignedOut,
+        is AuthState.SigningIn,
+        is AuthState.SigningUp,
+        is AuthState.SigningOut,
+        is AuthState.Error -> {
+            // Unauthenticated: Show portal selection or portal auth screen
+            when (selectedPortal) {
+                null -> {
+                    RoleSelectionScreen(
+                        onRoleSelected = { role ->
+                            authViewModel.selectPortal(role)
+                            travellerAuthStep = AuthScreenStep.SIGN_IN
+                            guideAuthStep = AuthScreenStep.SIGN_IN
+                        }
+                    )
+                }
+
+                UserRole.TRAVELLER -> {
+                    when (travellerAuthStep) {
+                        AuthScreenStep.SIGN_IN -> TravellerSignInScreen(
+                            authViewModel = authViewModel,
+                            onNavigateToSignUp = {
+                                authViewModel.clearErrors()
+                                travellerAuthStep = AuthScreenStep.SIGN_UP
+                            },
+                            onNavigateToForgotPassword = {
+                                authViewModel.clearErrors()
+                                travellerAuthStep = AuthScreenStep.FORGOT_PASSWORD
+                            },
+                            onBackToRoleSelection = {
+                                authViewModel.clearPortal()
+                            }
+                        )
+                        AuthScreenStep.SIGN_UP -> TravellerSignUpScreen(
+                            authViewModel = authViewModel,
+                            onNavigateToSignIn = {
+                                authViewModel.clearErrors()
+                                travellerAuthStep = AuthScreenStep.SIGN_IN
+                            },
+                            onBackToRoleSelection = {
+                                authViewModel.clearPortal()
+                            }
+                        )
+                        AuthScreenStep.FORGOT_PASSWORD -> TravellerForgotPasswordScreen(
+                            authViewModel = authViewModel,
+                            onBackToSignIn = {
+                                authViewModel.resetPasswordState()
+                                travellerAuthStep = AuthScreenStep.SIGN_IN
+                            }
+                        )
+                    }
+                }
+
+                UserRole.GUIDE -> {
+                    when (guideAuthStep) {
+                        AuthScreenStep.SIGN_IN -> GuideSignInScreen(
+                            authViewModel = authViewModel,
+                            onNavigateToSignUp = {
+                                authViewModel.clearErrors()
+                                guideAuthStep = AuthScreenStep.SIGN_UP
+                            },
+                            onNavigateToForgotPassword = {
+                                authViewModel.clearErrors()
+                                guideAuthStep = AuthScreenStep.FORGOT_PASSWORD
+                            },
+                            onBackToRoleSelection = {
+                                authViewModel.clearPortal()
+                            }
+                        )
+                        AuthScreenStep.SIGN_UP -> GuideSignUpScreen(
+                            authViewModel = authViewModel,
+                            onNavigateToSignIn = {
+                                authViewModel.clearErrors()
+                                guideAuthStep = AuthScreenStep.SIGN_IN
+                            },
+                            onBackToRoleSelection = {
+                                authViewModel.clearPortal()
+                            }
+                        )
+                        AuthScreenStep.FORGOT_PASSWORD -> TravellerForgotPasswordScreen(
+                            authViewModel = authViewModel,
+                            onBackToSignIn = {
+                                authViewModel.resetPasswordState()
+                                guideAuthStep = AuthScreenStep.SIGN_IN
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun TravellerNavigationHost(
     repository: RoamlyRepository,
-    onSwitchRole: () -> Unit
+    currentUser: AuthUser? = null,
+    onSignOut: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(TravellerTab.HOME) }
     var showingProfile by remember { mutableStateOf(false) }
@@ -128,7 +273,7 @@ private fun TravellerNavigationHost(
         topBar = {
             TopAppBarHeader(
                 roleLabel = "TRAVELLER",
-                onSwitchRole = onSwitchRole,
+                onSwitchRole = onSignOut,
                 onProfileClick = { showingProfile = !showingProfile },
                 isProfileActive = showingProfile
             )
@@ -189,7 +334,9 @@ private fun TravellerNavigationHost(
             if (showingProfile) {
                 ProfileScreen(
                     repository = repository,
-                    onSwitchRoleRequested = onSwitchRole
+                    currentUser = currentUser,
+                    onSwitchRoleRequested = onSignOut,
+                    onSignOutRequested = onSignOut
                 )
             } else {
                 when (selectedTab) {
@@ -229,7 +376,8 @@ private fun TravellerNavigationHost(
 @Composable
 private fun GuideNavigationHost(
     repository: RoamlyRepository,
-    onSwitchRole: () -> Unit
+    currentUser: AuthUser? = null,
+    onSignOut: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(GuideTab.DASHBOARD) }
     var managingTripId by remember { mutableStateOf<String?>(null) }
@@ -248,7 +396,7 @@ private fun GuideNavigationHost(
         topBar = {
             TopAppBarHeader(
                 roleLabel = "GUIDE",
-                onSwitchRole = onSwitchRole,
+                onSwitchRole = onSignOut,
                 onProfileClick = { selectedTab = GuideTab.PROFILE },
                 isProfileActive = selectedTab == GuideTab.PROFILE
             )
@@ -303,7 +451,7 @@ private fun GuideNavigationHost(
                 GuideTab.DASHBOARD -> GuideDashboardScreen(
                     repository = repository,
                     onManageTrip = { trip -> managingTripId = trip.id },
-                    onSwitchRole = onSwitchRole
+                    onSwitchRole = onSignOut
                 )
                 GuideTab.TRIPS -> MyTripsScreen(
                     repository = repository
@@ -313,7 +461,9 @@ private fun GuideNavigationHost(
                 )
                 GuideTab.PROFILE -> ProfileScreen(
                     repository = repository,
-                    onSwitchRoleRequested = onSwitchRole
+                    currentUser = currentUser,
+                    onSwitchRoleRequested = onSignOut,
+                    onSignOutRequested = onSignOut
                 )
             }
         }

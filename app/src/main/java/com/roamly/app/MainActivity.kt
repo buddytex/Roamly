@@ -17,6 +17,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val repository = RoamlyRepository.getInstance(applicationContext)
+        val authRepository = com.roamly.app.auth.data.SupabaseAuthRepository.getInstance(applicationContext)
+        val authViewModel = com.roamly.app.auth.ui.AuthViewModel(authRepository)
 
         setContent {
             RoamlyTheme {
@@ -24,7 +26,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = RoamlyBackground
                 ) {
-                    RoamlyMainApp(repository = repository)
+                    RoamlyMainApp(
+                        repository = repository,
+                        authViewModel = authViewModel
+                    )
                 }
             }
         }

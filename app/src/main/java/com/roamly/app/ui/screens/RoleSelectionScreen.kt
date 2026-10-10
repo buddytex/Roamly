@@ -113,19 +113,19 @@ fun RoleSelectionScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Demo Mode Banner
+        // Portal Badge
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(10.dp))
-                .background(RoamlyAccentContainer)
-                .border(1.dp, RoamlyAccent.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                .background(RoamlyPrimaryContainer.copy(alpha = 0.6f))
+                .border(1.dp, RoamlyPrimary.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                 .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Text(
-                text = "DEMO MODE • Offline Demonstration",
+                text = "Select Portal to Continue",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = RoamlyTextPrimary
+                color = RoamlyPrimary
             )
         }
 
@@ -170,8 +170,8 @@ fun RoleSelectionScreen(
                             color = RoamlyTextPrimary
                         )
                         Text(
-                            text = "Solo, couple, family, or friends",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Your personal travel companion.",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = RoamlyTextSecondary
                         )
                     }
@@ -247,14 +247,14 @@ fun RoleSelectionScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            text = "I'm a Guide",
+                            text = "I'm Guiding",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = RoamlyTextPrimary
                         )
                         Text(
-                            text = "Tour leader or trip organiser",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Manage your travellers and trip.",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = RoamlyTextSecondary
                         )
                     }

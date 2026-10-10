@@ -65,7 +65,9 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 @Composable
 fun ProfileScreen(
     repository: RoamlyRepository,
-    onSwitchRoleRequested: (() -> Unit)? = null
+    currentUser: com.roamly.app.auth.model.AuthUser? = null,
+    onSwitchRoleRequested: (() -> Unit)? = null,
+    onSignOutRequested: (() -> Unit)? = null
 ) {
     val currentRole by repository.selectedRole.collectAsState()
     val trips by repository.trips.collectAsState()
@@ -169,14 +171,14 @@ fun ProfileScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isGuide) "Alex Chen (Guide)" else "Alex & Maya",
+                                text = currentUser?.fullName ?: if (isGuide) "Alex Chen (Guide)" else "Alex & Maya",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = RoamlyTextPrimary
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isGuide) "Certified Tour Organiser • Singapore" else "Cultural & Culinary Explorer",
+                                text = currentUser?.email ?: if (isGuide) "Certified Tour Organiser • Singapore" else "Cultural & Culinary Explorer",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary
                             )
@@ -226,6 +228,24 @@ fun ProfileScreen(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+
+                    if (onSignOutRequested != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onSignOutRequested,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RoamlyError)
+                        ) {
+                            Text(
+                                text = "Sign Out of Roamly",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

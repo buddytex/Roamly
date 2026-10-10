@@ -115,8 +115,119 @@ The compiled APK is located at:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Run Unit Tests
+```bash
+./gradlew test
+```
+Runs 14 automated unit tests covering both the travel data models and the authentication system (`AuthSystemTest`).
+
 ### Install onto Connected Android Phone
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.roamly.app/.MainActivity
 ```
+
+---
+
+## 🔐 Complete Authentication & Supabase Backend Setup
+
+Roamly integrates a production-grade authentication and authorization system powered by **Supabase Auth**, **PostgreSQL**, and **Row Level Security (RLS)**, offering distinct, role-tailored experiences for both **Travellers** and **Tour Guides**.
+
+### 1. Dual Persona Overview
+- **Traveller Portal (`TRAVELLER`)**:
+  - Sign in or sign up via email & password or Google OAuth.
+  - Automatically receives `approved` status.
+  - Grants instant access to the personal 5-day Singapore itinerary, packing checklists, offline travel assistant, and belongings check.
+- **Guide Portal (`GUIDE`)**:
+  - Sign in or request access via email & password or Google OAuth.
+  - Starts in `pending` approval status.
+  - Cannot access guide dashboards, group rosters, or emergency medical info until explicitly verified and approved by an administrator.
+
+---
+
+### 2. Supabase Project Configuration
+
+1. **Create a Supabase Project**:
+   - Go to [Supabase](https://supabase.com) and create a new project.
+   - Choose a region close to your target audience (e.g., `Singapore (ap-southeast-1)`).
+2. **Retrieve API Credentials**:
+   - In your Supabase dashboard, go to **Project Settings** → **API**.
+   - Copy the **Project URL** (`https://<project-ref>.supabase.co`).
+   - Copy the **`anon` `public` API Key**.
+   - ⚠️ **SECURITY WARNING**: Never put the `service_role` secret key into Android source code or `build.gradle`. Roamly only requires the client `anon` key.
+3. **Apply Database Migrations**:
+   - In Supabase Dashboard, open **SQL Editor**.
+   - Execute the contents of [`supabase/migrations/20261011000001_auth_profiles_schema.sql`](file:///home/buddy/Roamly%20/supabase/migrations/20261011000001_auth_profiles_schema.sql).
+   - This sets up:
+     - `profiles`: Linked to `auth.users(id)` with strict role and approval status constraints.
+     - `trips`: Seeded with the canonical 5-day Singapore Explorer (`trip_singapore_2026`).
+     - `trip_members`, `check_ins`, `announcements`.
+     - `handle_new_user()` trigger: Automatically creates user profile on auth signup.
+     - `prevent_role_escalation()` trigger: Forbids non-admin users from altering their role or self-approving.
+     - Row Level Security (RLS) policies on all tables.
+4. **Configure Auth Providers**:
+   - In Supabase Dashboard, navigate to **Authentication** → **Providers**.
+   - **Email Provider**: Enable Email signup. Toggle "Confirm email" based on your development or production policy.
+   - **Password Recovery**: Set Site URL or redirect URI to `com.roamly.app://auth/callback` or your web portal.
+
+---
+
+### 3. Google OAuth Configuration (Credential Manager)
+
+1. **Google Cloud Console**:
+   - Navigate to [Google Cloud Console](https://console.cloud.google.com).
+   - Create or select your project.
+   - In **APIs & Services** → **OAuth consent screen**, configure consent screen details.
+   - In **Credentials** → **Create Credentials** → **OAuth client ID**:
+     - Create a **Web Application** client ID (this will be your `GOOGLE_WEB_CLIENT_ID` used by Android Credential Manager and Supabase).
+     - Create an **Android** client ID:
+       - Package name: `com.roamly.app`
+       - SHA-1 fingerprint: Obtain using `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`.
+2. **Supabase Google Provider**:
+   - Under Supabase **Authentication** → **Providers** → **Google**:
+     - Enable the provider.
+     - Paste the Web Client ID and Web Client Secret from Google Cloud Console.
+
+---
+
+### 4. Local Android Project Configuration
+
+To connect the application to your live Supabase and Google OAuth backend, add your credentials to `local.properties` (which is `.gitignore`d) or `gradle.properties`:
+
+```properties
+# ~/.gradle/gradle.properties or /path/to/Roamly/local.properties
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOi...your-public-anon-key
+GOOGLE_WEB_CLIENT_ID=your-google-web-client-id.apps.googleusercontent.com
+```
+
+Alternatively, export them as environment variables during build:
+```bash
+export SUPABASE_URL="https://your-project-id.supabase.co"
+export SUPABASE_ANON_KEY="eyJhbGciOi...your-anon-key"
+export GOOGLE_WEB_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+./gradlew assembleDebug
+```
+
+If these values are omitted, the app compiles with safe fallback placeholders and clearly prompts you to configure credentials when an online authentication action is initiated.
+
+---
+
+### 5. Guide Verification & Administrative Approval
+
+Guide accounts are restricted to prevent unauthorised access to private traveller data, group check-ins, and medical notes.
+
+When a user signs up as a Guide:
+1. Their account is registered with `role = 'guide'` and `approval_status = 'pending'`.
+2. The user sees the **Guide Application Pending** screen with their verification details.
+3. An administrator approves the account in the Supabase Dashboard:
+
+```sql
+-- Run in Supabase SQL Editor as Administrator:
+UPDATE public.profiles
+SET approval_status = 'approved'
+WHERE email = 'guide@example.com';
+```
+
+4. Once approved, tapping **"Refresh Status"** in the app immediately unlocks the full Guide Dashboard and traveller roster.
+
