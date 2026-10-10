@@ -1,4 +1,4 @@
-﻿pluginManagement {
+pluginManagement {
     repositories {
         google {
             content {
@@ -23,6 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RailGuard"
+rootProject.name = "TripMate"
 include(":app")
-project(":app").projectDir = file("RailAgent_apk/app")

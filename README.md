@@ -1,159 +1,100 @@
-# RAILguard AI
-### Autonomous Railway Inspection, Hazard Classification & Real-Time Incident Response Platform
+# TripMate 🌍
+### AI-Powered Group Travel & Tourist Safety Platform
+**Layover 2026 Hackathon — Travel & Tourism Track**
 
-[![Architecture](https://img.shields.io/badge/Architecture-Distributed_Multi--Agent-blue.svg)](docs/architecture/)
-[![Simulation](https://img.shields.io/badge/Simulation-Digital_Twin_Verified-success.svg)](simulation/)
-[![Perception](https://img.shields.io/badge/Perception-ONNX_HeatmapNet-orange.svg)](perception/)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+TripMate is an intelligent, offline-capable mobile companion for tourists and tour guides. Built for group travel, it bridges the gap between travelers and tour operators through interactive real-time itineraries, proactive belonging verification, contextual AI travel assistance, and immediate emergency SOS dispatch.
 
 ---
 
-## 1. Executive Summary
+## 🚀 Key Features
 
-**RAILguard AI** is a distributed, agent-based autonomous railway inspection and safety ecosystem. The platform continuously monitors railway corridors, classifies infrastructural hazards (e.g., broken rails, track buckling, obstacles, fastener failures), dynamically plans collision-free transit routes, coordinates with moving rolling stock, and executes real-time incident-response mitigations (such as track blocking and train rerouting).
+### 1. 👥 Dual-Role Architecture (Tourist & Guide Modes)
+- **Role Switching**: Instantly switch between Tourist and Tour Guide perspectives via the top app bar for seamless hackathon demonstrations.
+- **Synchronized State**: State changes made by the guide (itinerary changes, published trips) reflect across the shared reactive store.
 
-> [!IMPORTANT]
-> **Physical Prototype vs. Future Production System**:
-> - **Current Physical Prototype**: A 4-wheel omni-wheel mobile robot equipped with a smartphone (primary onboard compute/perception), ESP32 (low-level motor/servo hardware interface), and environmental sensors (IMU, GPS, LiDAR).
-> - **Future Production Product**: A rail-mounted autonomous railway inspection and maintenance vehicle navigating directly on live track networks.
-> - The software architecture, communication contracts, multi-agent coordination, and digital twin are designed from first principles for the **future rail-mounted product**, using the omni robot solely for early empirical validation.
+### 2. 📍 Interactive Chronological Itinerary
+- **Live Destination Status**: Real-time progress tracking across trip stops (e.g., *Current*, *Next*, *Upcoming*, *Completed*).
+- **Activity & Precaution Guides**: Curated activity checklists, dress codes, recommended durations, and safety guidelines per stop.
+- **Check-in System**: Travelers confirm their arrival at each stop, updating tour guide headcount records in real time.
+
+### 3. 🎒 Smart Packing & Belongings Departure Checklist
+- **Pre-Trip Packing List**: Categorized checklists (Documents, Essentials, Clothing, Tech, Health) with item completion stats.
+- **Zero-Lost Belongings Reminder**: At every destination departure, TripMate prompts tourists to verify high-risk items (passport, wallet, camera, sunglasses, phone charger) before moving to the next stop.
+- **Missing Item Reporting**: One-tap reporting alerts the tour guide immediately if an item is left behind at a venue.
+
+### 4. 🤖 Context-Aware AI Travel Assistant
+- **Offline-First & Deterministic**: Fast, zero-hallucination local assistant with rich knowledge of the current tour and destinations.
+- **Contextual Suggestions**: One-tap query chips for weather precautions, local dress codes, upcoming schedules, emergency contacts, and tipping etiquette.
+- **Conversational Queries**: Interactive Q&A covering local culture, logistics, and timing.
+
+### 5. 🆘 Emergency SOS & Safety Dispatch
+- **One-Tap Emergency Alert**: Instant distress beacon with real-time GPS coordinates and timestamping.
+- **Direct Guide Link**: Immediate notification to tour leaders with the traveler's status and last known location.
+- **Emergency Hotlines**: Direct one-tap access to local police, ambulance, and tourist police services.
+
+### 6. 🧭 Tour Guide Command Center
+- **Roster & Attendance Tracking**: Live count of checked-in vs overdue travelers at each destination.
+- **Emergency Triage**: High-priority incident feed displaying active traveler SOS alerts with resolve actions.
+- **Itinerary Publishing**: Dedicated interface for tour guides to design and broadcast new multi-day itineraries.
 
 ---
 
-## 2. End-to-End System Architecture
+## 🏗️ Project Architecture
+
+TripMate is built with modern Android native architecture:
+- **UI Framework**: Jetpack Compose + Material Design 3
+- **Language**: Kotlin 2.2
+- **State Management**: Reactive `StateFlow` backed by `TripMateRepository`
+- **Persistence**: Local offline-first JSON storage via `SharedPreferences`
+- **Location Services**: Google Play Services Fused Location Provider
+- **Minimum Android SDK**: API 26 (Android 8.0 Oreo)
+- **Target Android SDK**: API 35 (Android 15)
 
 ```
-                                  [ ONBOARD ROBOT ]
-                          Smartphone (Camera + LiDAR + IMU + GPS)
-                                        │
-                                        ▼
-                             Onboard Perception Agent
-                     (ONNX HeatmapNet + Defect Classifier)
-                                        │
-                                 Wi-Fi / HTTP
-                                        │
-                                        ▼
-                           [ CENTRAL RAILWAY NODE ]
-                                Raspberry Pi 4
-                                        │
-    ┌───────────────────────────────────┼───────────────────────────────────┐
-    ▼                                   ▼                                   ▼
-Central Coordinator Agent       Mission Planning Agent            Railway Safety Agent
-(State Orchestration)           (Lifecycle & Priority)            (Spatio-Temporal TTC)
-    │                                   │                                   │
-    └───────────────────────────────────┼───────────────────────────────────┘
-                                        ▼
-                               Path Planning Agent
-                           (Time-Aware Dynamic A*)
-                                        │
-                                        ▼
-                                  Traffic Agent
-                          (4-Train Kinematic Simulator)
-                                        │
-               ┌────────────────────────┴────────────────────────┐
-               ▼                                                 ▼
-      [ PHYSICAL ROBOT ]                                 [ LAPTOP CLIENT ]
-    Smartphone ──► ESP32                                 Live Digital Twin
- (Kinematics ──► Motors)                              (Matplotlib / Telemetry)
-```
-
----
-
-## 3. Distributed Roles & Responsibilities
-
-### A. Smartphone / Onboard Intelligence (`android/`)
-- **Main Processing Computer**: Houses the high-level onboard agent.
-- **Perception Pipeline**: Ingests camera frames at $512 \times 288$, executes ONNX HeatmapNet inference, decodes primary and secondary rail geometries, and detects anomalies.
-- **Sensor Fusion**: Aggregates phone IMU, GPS, and LiDAR point clouds.
-- **Hardware Bridge**: Relays target velocity commands to the ESP32 and receives motor/encoder status.
-
-### B. ESP32 Microcontroller (`esp32/`)
-- **Low-Level Hardware Controller**: Drives 4 omni-wheel motors and MG996R servo mechanisms.
-- **Telemetry Provider**: Reads encoder feedback, current draw, and battery voltage.
-- **Safety Interlock**: Implements hardware watchdogs that halt motors if heartbeat with phone is lost.
-
-### C. Raspberry Pi Central Node (`pi/`)
-- **Single Source of Truth**: Runs Ubuntu 22 and hosts the central multi-agent system.
-- **Multi-Agent Roster**:
-  1. **Central Coordinator Agent**: Orchestrates railway state, manages active missions, and handles track blocking.
-  2. **Mission Planning Agent**: Triages reported anomalies and dispatches inspection orders.
-  3. **Path Planning Agent**: Calculates Time-Aware A* routes factoring in track geometry and train reservation windows.
-  4. **Railway Safety Agent**: Deterministically verifies time-to-collision (TTC) and minimum safe headway margins.
-  5. **Traffic Agent**: Simulates 4 persistent trains across 3 corridors, managing dynamic switch diversion and overtaking.
-
-### D. Laptop Visualization Client (`simulation/`)
-- **Passive Monitoring Terminal**: Connects to the Pi via Wi-Fi/LAN.
-- **Real-Time Digital Twin**: Renders tracks, switches, train positions, robot trajectory, and live agent decision audit logs.
-
----
-
-## 4. Repository Structure
-
-```text
-RAILguardAI/
-├── android/                   # Android Studio Kotlin Project (Camera, ONNX, LiDAR, IMU)
-├── esp32/                     # ESP32 Arduino / C++ Firmware (Motor control, Telemetry)
-├── pi/                        # Raspberry Pi Central Server & Multi-Agent Framework
-│   ├── server/                # HTTP API Server & Coordinator Engine
-│   ├── agents/                # Coordinator, Mission Planning, Path Planning, Safety, Traffic
-│   ├── railway/               # Railway Graph Topology & World Model
-│   └── communication/         # Inter-node Communication Handlers
-├── simulation/                # Railway Digital Twin Simulation
-│   ├── core/                  # Kinematics, Rolling Stock Entities, Robot Physics
-│   ├── text_sim/              # Deterministic Headless CLI Snapshot Runner
-│   └── visualization/         # Matplotlib Real-Time Interactive Twin & HUD
-├── perception/                # AI & Computer Vision Models
-│   ├── models/                # Production ONNX Heatmap Models
-│   ├── scripts/               # Model Training, Evaluation, and Dataset Pipelines
-│   └── notebooks/             # Google Colab Training Notebooks
-├── shared/                    # Shared Data Contracts & Protocols
-│   ├── schemas/               # Telemetry, Anomaly, and Mission Schemas
-│   └── protocols/             # Phone <-> Pi and Phone <-> ESP32 Specifications
-├── configs/                   # Global System Configuration & Network Limits
-├── docs/                      # Technical Documentation & Hardware Guides
-├── tests/                     # Automated Test Suites (8 Scenarios, Collision Prevention)
-├── scripts/                   # Utility Scripts & Launchers
-├── .gitignore                 # Universal Git Ignore Specification
-└── README.md                  # Project Documentation
+app/src/main/java/com/railguard/mobile/
+├── tripmate/
+│   ├── ai/
+│   │   └── TripMateAiAssistant.kt       # Local context-aware travel assistant
+│   ├── data/
+│   │   ├── SampleData.kt                # Curated demonstration tour datasets
+│   │   └── TripMateRepository.kt        # Reactive state repository & persistence
+│   ├── models/
+│   │   └── TripMateModels.kt            # Data schemas (Trip, Destination, SOS, etc.)
+│   └── ui/
+│       ├── TripMateApp.kt               # Main scaffold, navigation bar & role switcher
+│       ├── tourist/
+│       │   ├── TouristHomeScreen.kt     # Tourist dashboard & quick actions
+│       │   ├── ItineraryScreen.kt       # Step-by-step timeline & check-in flow
+│       │   ├── DestinationDetailScreen.kt# Stop overview, activities & precautions
+│       │   ├── BelongingsReminderDialog.kt# Departure checklist & missing item alerts
+│       │   ├── PackingChecklistScreen.kt# Categorized preparation checklists
+│       │   ├── AiAssistantScreen.kt     # Interactive travel concierge chat
+│       │   └── SosScreen.kt             # Emergency assistance & GPS coordinates
+│       └── guide/
+│           ├── GuideDashboardScreen.kt  # Attendance tracking, alerts & traveler status
+│           └── TripCreateEditScreen.kt  # Itinerary builder & publisher
+└── MainActivity.kt                      # Application entry point
 ```
 
 ---
 
-## 5. Two-Developer Git Workflow
+## 🛠️ Building & Running
 
-To maintain a clean, conflict-free codebase, all development is conducted via dedicated feature branches and Pull Requests:
+### Prerequisites
+- JDK 17 or JDK 21 (`JAVA_HOME` configured)
+- Android SDK (API 35+ with Build Tools 35.0.0+)
 
-```text
-main (Protected, stable, demo-ready)
- │
- ├── Developer 1 (Naveen)
- │    ├── naveen/perception       (Heatmap models, track/anomaly detection)
- │    ├── naveen/simulation       (Digital twin, traffic model, fast-forward)
- │    └── naveen/agents           (A* path planner, coordinator, safety agent)
- │
- └── Developer 2 (Teammate)
-      ├── teammate/robot          (Chassis, physical assembly, motor wiring)
-      ├── teammate/esp32          (Firmware, servo control, hardware telemetry)
-      ├── teammate/pi             (Pi Ubuntu deployment, HTTP server setup)
-      └── teammate/integration    (Phone <-> Pi <-> ESP32 integration)
-```
-
----
-
-## 6. Verification & Test Execution
-
-Run the complete suite of deterministic tests from the project root:
-
+### Build Debug APK
 ```bash
-# 1. Run all 8 multi-agent railway scenarios
-python -m tests.test_text_scenarios
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew assembleDebug
+```
+The compiled APK will be generated at:
+```
+app/build/outputs/apk/debug/app-debug.apk
+```
 
-# 2. Run standalone headless text simulation
-python -m simulation.text_sim.sim_text
-
-# 3. Run collision prevention suite (Tests A to H)
-python -m tests.test_collision_prevention
-
-# 4. Run 4-train simplified traffic model tests
-python -m tests.test_simplified_traffic_model
+### Install onto Connected Android Device
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.railguard.mobile/.MainActivity
 ```
