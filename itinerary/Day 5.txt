@@ -1,0 +1,49 @@
+Day 5 checklist
+Roamly departure checklist
+0/7
+
+[ ] Passport and travel documents packed
+[ ] Luggage and room checked
+[ ] Hotel checkout completed
+[ ] Airport transfer confirmed
+[ ] Departure terminal checked
+[ ] Airline check-in and baggage drop completed
+[ ] Boarding gate and departure time verified
+
+Day 5: Hotel Checkout & Return Journey
+
+1. Wake up and pack
+7:00–7:30 AM
+Location: Hotel 1900 Chinatown (proposed)
+Get ready, pack all belongings, check the room and keep your passport, phone and flight documents accessible.
+
+2. Breakfast
+7:30–8:00 AM
+Location: Hotel or nearby Chinatown café
+Have breakfast and check the airline's baggage allowance and check-in requirements.
+
+3. Hotel checkout
+8:00–8:30 AM
+Location: Hotel 1900 Chinatown (proposed)
+Return the room key, settle any outstanding charges and confirm that all luggage has been collected. Ask about luggage storage if your flight is later in the day.
+
+4. Transfer to Changi Airport
+8:30–9:30 AM — illustrative
+Destination: Singapore Changi Airport (SIN)
+Take the agency-arranged vehicle or MRT. Allow extra time for traffic, luggage and the terminal associated with the actual flight.
+
+5. Airline check-in and baggage drop
+At the airline's recommended arrival time
+Location: Your airline's departure terminal at Changi Airport
+Check in if required, drop checked baggage, verify the boarding gate and complete departure procedures. For many international flights, arriving around three hours before departure is a useful guideline; follow the airline's instructions.
+
+6. Security, immigration and boarding gate
+Before the scheduled departure
+Location: Changi Airport departure area
+Complete the required formalities, check the airport displays for gate changes and reach the boarding gate by the airline's stated deadline.
+
+7. Return flight
+As per confirmed flight ticket
+From: Singapore Changi Airport (SIN) · To: Agency-booked destination airport
+Board the confirmed flight home. Roamly should display the actual airline, flight number, departure time and arrival time from the agency's booking record.
+
