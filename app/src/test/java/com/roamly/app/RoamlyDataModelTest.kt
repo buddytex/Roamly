@@ -17,11 +17,11 @@ class RoamlyDataModelTest {
     @Test
     fun testSampleTripsIntegrity() {
         val trips = SampleData.sampleTrips
-        assertTrue("Sample trips should not be empty", trips.isNotEmpty())
-
-        val singaporeTrip = trips.find { it.id == "trip_singapore_2026" }
-        assertNotNull("Singapore trip must exist", singaporeTrip)
-        assertEquals("Singapore Explorer", singaporeTrip!!.title)
+        assertEquals("Singapore must be the single available trip", 1, trips.size)
+        val singaporeTrip = trips.first()
+        assertEquals("trip_singapore_2026", singaporeTrip.id)
+        assertEquals("Singapore", singaporeTrip.destination)
+        assertEquals("Singapore Explorer", singaporeTrip.title)
         assertEquals(5, singaporeTrip.durationDays)
         assertEquals(5, singaporeTrip.days.size)
 

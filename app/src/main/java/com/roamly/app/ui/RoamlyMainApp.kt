@@ -122,6 +122,7 @@ private fun TravellerNavigationHost(
     var selectedTab by remember { mutableStateOf(TravellerTab.HOME) }
     var showingProfile by remember { mutableStateOf(false) }
     var aiInitialPrompt by remember { mutableStateOf<String?>(null) }
+    var openItineraryDirectly by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -147,6 +148,7 @@ private fun TravellerNavigationHost(
                         onClick = {
                             showingProfile = false
                             selectedTab = tab
+                            openItineraryDirectly = false
                             if (tab != TravellerTab.HELP) {
                                 aiInitialPrompt = null
                             }
@@ -193,7 +195,14 @@ private fun TravellerNavigationHost(
                 when (selectedTab) {
                     TravellerTab.HOME -> HomeScreen(
                         repository = repository,
-                        onNavigateToTrips = { selectedTab = TravellerTab.TRIPS },
+                        onViewTravelPlan = {
+                            openItineraryDirectly = true
+                            selectedTab = TravellerTab.TRIPS
+                        },
+                        onNavigateToTrips = {
+                            openItineraryDirectly = false
+                            selectedTab = TravellerTab.TRIPS
+                        },
                         onNavigateToAi = { prompt ->
                             aiInitialPrompt = prompt
                             selectedTab = TravellerTab.HELP
@@ -201,7 +210,8 @@ private fun TravellerNavigationHost(
                         onNavigateToChecklists = { selectedTab = TravellerTab.CHECKLIST }
                     )
                     TravellerTab.TRIPS -> MyTripsScreen(
-                        repository = repository
+                        repository = repository,
+                        openItineraryDirectly = openItineraryDirectly
                     )
                     TravellerTab.HELP -> AiCompanionScreen(
                         repository = repository,

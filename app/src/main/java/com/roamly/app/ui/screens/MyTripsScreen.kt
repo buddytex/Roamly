@@ -82,14 +82,21 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 @Composable
 fun MyTripsScreen(
     repository: RoamlyRepository,
-    initialSelectedTripId: String? = null
+    initialSelectedTripId: String? = null,
+    openItineraryDirectly: Boolean = false
 ) {
     val trips by repository.trips.collectAsState()
     val activeTripId by repository.currentTripId.collectAsState()
 
     // Screen state: if activeTripForItinerary is null, display Trip Selection Overview; otherwise show Daily Itinerary
-    var activeTripForItinerary by remember {
-        mutableStateOf(trips.find { it.id == (initialSelectedTripId ?: activeTripId) })
+    var activeTripForItinerary by remember(initialSelectedTripId, openItineraryDirectly) {
+        mutableStateOf(
+            if (openItineraryDirectly) {
+                trips.find { it.id == (initialSelectedTripId ?: activeTripId) } ?: trips.firstOrNull()
+            } else {
+                null
+            }
+        )
     }
     var showPlanTripDialog by remember { mutableStateOf(false) }
 
@@ -207,6 +214,32 @@ private fun TripSelectionOverview(
                     fontWeight = FontWeight.Bold,
                     color = RoamlySurface
                 )
+            }
+
+            // Unobtrusive notice
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(RoamlyPrimaryContainer.copy(alpha = 0.4f))
+                    .border(1.dp, RoamlyPrimary.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = RoamlyPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Singapore is your current available trip.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = RoamlyTextPrimary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))

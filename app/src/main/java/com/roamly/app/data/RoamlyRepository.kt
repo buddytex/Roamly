@@ -59,7 +59,14 @@ class RoamlyRepository private constructor(context: Context) {
             if (tripsJson != null) {
                 val type = object : TypeToken<List<Trip>>() {}.type
                 val loaded: List<Trip>? = gson.fromJson(tripsJson, type)
-                _trips.value = if (!loaded.isNullOrEmpty()) loaded else SampleData.sampleTrips
+                // Ensure Singapore is always present and remove obsolete fake trips
+                val validTrips = loaded?.filter { it.id == "trip_singapore_2026" || (!it.id.startsWith("trip_penang") && !it.id.startsWith("trip_kyoto")) }
+                val hasSingapore = validTrips?.any { it.id == "trip_singapore_2026" } == true
+                _trips.value = if (hasSingapore && !validTrips.isNullOrEmpty()) {
+                    validTrips
+                } else {
+                    SampleData.sampleTrips
+                }
             } else {
                 _trips.value = SampleData.sampleTrips
                 saveTrips(_trips.value)
@@ -142,8 +149,11 @@ class RoamlyRepository private constructor(context: Context) {
     }
 
     // Trip Selection & Management
-    fun getCurrentTrip(): Trip? {
-        return _trips.value.find { it.id == _currentTripId.value } ?: _trips.value.firstOrNull()
+    fun getCurrentTrip(): Trip {
+        return _trips.value.find { it.id == _currentTripId.value }
+            ?: _trips.value.find { it.id == "trip_singapore_2026" }
+            ?: _trips.value.firstOrNull()
+            ?: SampleData.sampleTrips.first()
     }
 
     fun selectTrip(tripId: String) {

@@ -316,40 +316,6 @@ object SampleData {
                     )
                 )
             )
-        ),
-        Trip(
-            id = "trip_penang_2026",
-            title = "Penang Culinary & Shophouses",
-            destination = "Penang",
-            country = "Malaysia",
-            dates = "Nov 5 – 8, 2026",
-            durationDays = 4,
-            travelerCount = 3,
-            travelers = listOf("Alex Chen", "Maya Lin", "Kenji Sato"),
-            status = TripStatus.PLANNING,
-            summary = "Street food trails in historic George Town, clan jetties, and spice garden explorations.",
-            meetingPoint = "Eastern & Oriental Hotel Lobby, George Town",
-            announcements = listOf("Draft itinerary prepared; passport validity check pending for travellers."),
-            maxGroupSize = 6,
-            isGuideManaged = true,
-            days = emptyList()
-        ),
-        Trip(
-            id = "trip_kyoto_past",
-            title = "Kyoto Zen & Ancient Shrines",
-            destination = "Kyoto",
-            country = "Japan",
-            dates = "April 4 – 9, 2026",
-            durationDays = 6,
-            travelerCount = 2,
-            travelers = listOf("Alex Chen", "Maya Lin"),
-            status = TripStatus.COMPLETED,
-            summary = "Tranquil bamboo groves, vermillion torii corridors, and traditional matcha ceremonies in historic Kyoto.",
-            meetingPoint = "Kyoto Station Central Gate",
-            announcements = listOf("Trip successfully completed. Thank you for travelling with us!"),
-            maxGroupSize = 6,
-            isGuideManaged = false,
-            days = emptyList()
         )
     )
 
@@ -471,13 +437,13 @@ object SampleData {
         TravellerRecord(
             id = "trav_kenji",
             name = "Kenji Sato",
-            assignedTripId = "trip_penang_2026",
-            assignedTripName = "Penang Culinary & Shophouses",
+            assignedTripId = "trip_singapore_2026",
+            assignedTripName = "Singapore Explorer",
             preparationStatus = "Ready",
             packedItemsCount = 18,
-            totalItemsCount = 20,
-            visitedActivitiesCount = 0,
-            totalActivitiesCount = 0,
+            totalItemsCount = 23,
+            visitedActivitiesCount = 1,
+            totalActivitiesCount = 3,
             contactPhone = "+81 90 1234 5678"
         )
     )

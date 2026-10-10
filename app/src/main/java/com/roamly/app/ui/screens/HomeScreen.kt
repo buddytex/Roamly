@@ -64,13 +64,14 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 @Composable
 fun HomeScreen(
     repository: RoamlyRepository,
+    onViewTravelPlan: (com.roamly.app.model.Trip) -> Unit,
     onNavigateToTrips: () -> Unit,
     onNavigateToAi: (prompt: String?) -> Unit,
     onNavigateToChecklists: () -> Unit
 ) {
     val trips by repository.trips.collectAsState()
     val checklist by repository.checklist.collectAsState()
-    val currentTrip = repository.getCurrentTrip() ?: trips.firstOrNull()
+    val currentTrip = repository.getCurrentTrip()
 
     val totalItems = checklist.size
     val packedItems = checklist.count { it.isPacked }
@@ -101,7 +102,7 @@ fun HomeScreen(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (currentTrip != null) "Welcome to your ${currentTrip.destination} trip." else "Welcome back to Roamly.",
+                        text = "Welcome to your ${currentTrip.destination} trip.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = RoamlyTextSecondary
                     )
@@ -144,8 +145,7 @@ fun HomeScreen(
 
         // MAIN TRIP CARD
         item {
-            if (currentTrip != null) {
-                Card(
+            Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = RoamlySurface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -193,29 +193,20 @@ fun HomeScreen(
                                         )
                                     }
 
-                                    // Switch Trip Button
+                                    // 5-Day Journey Badge
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(RoamlySurface.copy(alpha = 0.25f))
-                                            .clickable { onNavigateToTrips() }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Default.SwapHoriz,
-                                                contentDescription = "Switch Trip",
-                                                tint = RoamlySurface,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "Switch Trip",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = RoamlySurface,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
+                                        Text(
+                                            text = "5-DAY TRIP",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = RoamlySurface,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.5.sp
+                                        )
                                     }
                                 }
 
@@ -229,7 +220,7 @@ fun HomeScreen(
                             }
                         }
 
-                        // Trip Details & Primary Action
+                        // Trip Details & Primary/Secondary Actions
                         Column(modifier = Modifier.padding(18.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -280,10 +271,10 @@ fun HomeScreen(
 
                             // Primary Action Button: "View My Travel Plan"
                             Button(
-                                onClick = onNavigateToTrips,
+                                onClick = { onViewTravelPlan(currentTrip) },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp),
+                                    .height(52.dp),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
                             ) {
@@ -308,11 +299,29 @@ fun HomeScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Secondary Action: "My Trips"
+                            OutlinedButton(
+                                onClick = onNavigateToTrips,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, RoamlyPrimary.copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = "My Trips",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = RoamlyPrimary
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
         // THREE CLEAR USEFUL ACTIONS
         item {
@@ -424,7 +433,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
-                        .clickable { onNavigateToTrips() },
+                        .clickable { onViewTravelPlan(currentTrip) },
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = RoamlySurface)
                 ) {
