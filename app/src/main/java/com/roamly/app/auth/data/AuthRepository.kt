@@ -15,6 +15,7 @@ interface AuthRepository {
     suspend fun signUpWithEmail(fullName: String, email: String, password: String, role: UserRole): AuthResult<AuthUser>
     suspend fun signInWithGoogle(idToken: String, intendedRole: UserRole? = null): AuthResult<AuthUser>
     suspend fun sendPasswordResetEmail(email: String): AuthResult<Unit>
+    suspend fun signInAsDemoUser(role: UserRole): AuthResult<AuthUser>
     suspend fun signOut()
     fun clearError()
     fun assignUserRole(role: UserRole)

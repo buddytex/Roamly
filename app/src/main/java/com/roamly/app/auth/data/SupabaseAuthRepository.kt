@@ -422,6 +422,25 @@ class SupabaseAuthRepository(
         }
     }
 
+    override suspend fun signInAsDemoUser(role: UserRole): AuthResult<AuthUser> = withContext(ioDispatcher) {
+        val demoUser = AuthUser(
+            id = "demo_user_" + if (role == UserRole.GUIDE) "guide" else "traveller",
+            email = if (role == UserRole.GUIDE) "sarah.guide@roamly.app" else "alex.chen@roamly.app",
+            fullName = if (role == UserRole.GUIDE) "Sarah Jenkins" else "Alex Chen",
+            role = role,
+            approvalStatus = ApprovalStatus.APPROVED,
+            isEmailConfirmed = true
+        )
+        prefs.edit()
+            .putString(KEY_CACHED_USER, gson.toJson(demoUser))
+            .putLong(KEY_EXPIRES_AT, System.currentTimeMillis() + 86400000L)
+            .apply()
+        saveRole(role)
+        _currentUser.value = demoUser
+        _authState.value = AuthState.Authenticated(demoUser)
+        AuthResult.Success(demoUser)
+    }
+
     override suspend fun signOut() = withContext(ioDispatcher) {
         _authState.value = AuthState.SigningOut
         try {

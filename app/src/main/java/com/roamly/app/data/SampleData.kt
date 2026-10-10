@@ -12,8 +12,7 @@ import com.roamly.app.model.TravellerRecord
 
 object SampleData {
 
-    val sampleTrips: List<Trip> = listOf(
-        Trip(
+    val singaporeTrip: Trip = Trip(
             id = "trip_singapore_2026",
             title = "Singapore Explorer",
             destination = "Singapore",
@@ -317,7 +316,80 @@ object SampleData {
                 )
             )
         )
+
+    val tinkerspaceTrip: Trip = Trip(
+        id = "trip_tinkerspace_demo",
+        title = "Outside Tinkerspace",
+        destination = "Tinkerspace",
+        country = "India",
+        dates = "Today (Demo)",
+        durationDays = 1,
+        travelerCount = 1,
+        travelers = listOf("Alex Chen"),
+        status = TripStatus.UPCOMING,
+        summary = "A short demonstration trip showing location-aware arrivals, trip progress, and belongings verification.",
+        meetingPoint = "Tinkerspace Building Entrance",
+        announcements = listOf(
+            "Welcome to the Outside Tinkerspace demonstration journey! Tap Start Trip to begin."
+        ),
+        maxGroupSize = 4,
+        isGuideManaged = false,
+        days = listOf(
+            TripDay(
+                dayNumber = 1,
+                title = "Tinkerspace Demonstration Route",
+                date = "Today",
+                destinations = listOf(
+                    DestinationItem(
+                        id = "dest_tinker_outside",
+                        name = "Outside Tinkerspace Building",
+                        category = "Outdoor Waypoint",
+                        timeSlot = "Stop 1",
+                        duration = "10 mins",
+                        shortDescription = "The traveller leaves the building and reaches the designated outdoor arrival zone.",
+                        fullDescription = "Outdoor arrival zone outside Tinkerspace building to demonstrate GPS boundary detection.",
+                        practicalTips = listOf(
+                            "Proceed outside towards the outdoor arrival zone.",
+                            "Keep your phone active for location detection or tap Simulate Arrival."
+                        ),
+                        precautions = listOf(
+                            "Watch your step at the building threshold."
+                        ),
+                        activities = listOf(
+                            ActivityItem("act_tinker_1", "Reach outdoor arrival perimeter", false),
+                            ActivityItem("act_tinker_2", "Confirm outdoor arrival notification", false)
+                        ),
+                        isCompleted = false,
+                        locationTag = "Outside Tinkerspace"
+                    ),
+                    DestinationItem(
+                        id = "dest_tinker_inside",
+                        name = "Back Inside Tinkerspace Building",
+                        category = "Indoor Waypoint",
+                        timeSlot = "Stop 2",
+                        duration = "10 mins",
+                        shortDescription = "The traveller returns to the designated indoor arrival zone, completing the route.",
+                        fullDescription = "Indoor return zone inside Tinkerspace building completing the two-stop demonstration route.",
+                        practicalTips = listOf(
+                            "Head back into the main building hall.",
+                            "Perform your belongings check before ending the trip."
+                        ),
+                        precautions = listOf(
+                            "Verify all personal belongings before marking the trip complete."
+                        ),
+                        activities = listOf(
+                            ActivityItem("act_tinker_3", "Return indoors to Tinkerspace main hall", false),
+                            ActivityItem("act_tinker_4", "Complete belongings verification check", false)
+                        ),
+                        isCompleted = false,
+                        locationTag = "Inside Tinkerspace"
+                    )
+                )
+            )
+        )
     )
+
+    val sampleTrips: List<Trip> = listOf(singaporeTrip, tinkerspaceTrip)
 
     val sampleChecklist: List<ChecklistItem> = listOf(
         // Documents

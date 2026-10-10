@@ -143,6 +143,43 @@ fun HomeScreen(
             }
         }
 
+        // TRIP SWITCHER TABS (Singapore Explorer vs Outside Tinkerspace)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                trips.forEach { trip ->
+                    val isSelected = trip.id == currentTrip.id
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) RoamlyPrimary else RoamlySurface)
+                            .border(1.dp, if (isSelected) RoamlyPrimary else RoamlyBorder, RoundedCornerShape(12.dp))
+                            .clickable { repository.selectTrip(trip.id) }
+                            .padding(vertical = 10.dp, horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = trip.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) RoamlySurface else RoamlyTextPrimary
+                            )
+                            Text(
+                                text = if (trip.id == "trip_tinkerspace_demo") "Demo Journey" else "5-Day Holiday",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = if (isSelected) RoamlySurface.copy(alpha = 0.8f) else RoamlyTextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // MAIN TRIP CARD
         item {
             Card(
@@ -193,7 +230,7 @@ fun HomeScreen(
                                         )
                                     }
 
-                                    // 5-Day Journey Badge
+                                    // Duration / Demo Badge
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
@@ -201,7 +238,7 @@ fun HomeScreen(
                                             .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
-                                            text = "5-DAY TRIP",
+                                            text = if (currentTrip.id == "trip_singapore_2026") "5-DAY TRIP" else "DEMO JOURNEY",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = RoamlySurface,
                                             fontWeight = FontWeight.Bold,
@@ -286,7 +323,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "View My Travel Plan",
+                                    text = if (currentTrip.id == "trip_tinkerspace_demo") "Open Demo Journey" else "View My Travel Plan",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = RoamlySurface

@@ -144,6 +144,20 @@ class FakeAuthRepository : AuthRepository {
         return AuthResult.Success(Unit)
     }
 
+    override suspend fun signInAsDemoUser(role: UserRole): AuthResult<AuthUser> {
+        val user = AuthUser(
+            id = "demo-id",
+            email = "demo@roamly.app",
+            fullName = "Demo User",
+            role = role,
+            approvalStatus = ApprovalStatus.APPROVED,
+            isEmailConfirmed = true
+        )
+        _currentUser.value = user
+        _authState.value = AuthState.Authenticated(user)
+        return AuthResult.Success(user)
+    }
+
     override suspend fun signOut() {
         _currentUser.value = null
         _authState.value = AuthState.SignedOut
@@ -329,8 +343,12 @@ class AuthSystemTest {
     @Test
     fun testPreservationOfSingaporeItinerary() {
         val trips = SampleData.sampleTrips
-        assertEquals("Singapore must be the single available trip", 1, trips.size)
-        assertEquals("trip_singapore_2026", trips.first().id)
-        assertEquals(5, trips.first().days.size)
+        assertEquals("Both Singapore and Tinkerspace demo trips should be available", 2, trips.size)
+        val singapore = trips.first { it.id == "trip_singapore_2026" }
+        assertEquals("Singapore", singapore.destination)
+        assertEquals(5, singapore.days.size)
+        val tinkerspace = trips.first { it.id == "trip_tinkerspace_demo" }
+        assertEquals("Outside Tinkerspace", tinkerspace.title)
+        assertEquals(1, tinkerspace.days.size)
     }
 }

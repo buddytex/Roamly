@@ -108,6 +108,14 @@ class AuthViewModel(
         }
     }
 
+    fun signInAsDemo(role: UserRole) {
+        _formErrors.value = AuthFormErrors()
+        _selectedPortal.value = role
+        viewModelScope.launch {
+            authRepository.signInAsDemoUser(role)
+        }
+    }
+
     fun signUp(
         fullName: String,
         email: String,

@@ -17,8 +17,8 @@ class RoamlyDataModelTest {
     @Test
     fun testSampleTripsIntegrity() {
         val trips = SampleData.sampleTrips
-        assertEquals("Singapore must be the single available trip", 1, trips.size)
-        val singaporeTrip = trips.first()
+        assertEquals("Both Singapore and Tinkerspace trips must be available", 2, trips.size)
+        val singaporeTrip = trips.first { it.id == "trip_singapore_2026" }
         assertEquals("trip_singapore_2026", singaporeTrip.id)
         assertEquals("Singapore", singaporeTrip.destination)
         assertEquals("Singapore Explorer", singaporeTrip.title)
@@ -35,6 +35,18 @@ class RoamlyDataModelTest {
                 assertNotNull(dest.fullDescription)
             }
         }
+
+        // Verify Tinkerspace demo trip
+        val tinkerspaceTrip = trips.first { it.id == "trip_tinkerspace_demo" }
+        assertEquals("Outside Tinkerspace", tinkerspaceTrip.title)
+        assertEquals("Tinkerspace", tinkerspaceTrip.destination)
+        assertEquals(1, tinkerspaceTrip.days.size)
+        val stops = tinkerspaceTrip.days.first().destinations
+        assertEquals(2, stops.size)
+        assertEquals("dest_tinker_outside", stops[0].id)
+        assertEquals("Outside Tinkerspace Building", stops[0].name)
+        assertEquals("dest_tinker_inside", stops[1].id)
+        assertEquals("Back Inside Tinkerspace Building", stops[1].name)
     }
 
     @Test
@@ -97,5 +109,18 @@ class RoamlyDataModelTest {
 
         val unknownResponse = RoamlyAiCompanion.generateResponse("Random unrelated query xyz", singaporeTrip)
         assertNotNull(unknownResponse.text)
+    }
+
+    @Test
+    fun testTinkerspaceWorkflowStateMachine() {
+        val states = com.roamly.app.model.TinkerspaceWorkflowState.values()
+        assertEquals(7, states.size)
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.UPCOMING, states[0])
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.IN_PROGRESS, states[1])
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED, states[2])
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.INDOOR_STOP_REACHED, states[3])
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK, states[4])
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION, states[5])
+        assertEquals(com.roamly.app.model.TinkerspaceWorkflowState.COMPLETED, states[6])
     }
 }

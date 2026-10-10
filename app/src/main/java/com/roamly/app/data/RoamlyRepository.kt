@@ -10,6 +10,7 @@ import com.roamly.app.model.ChecklistCategory
 import com.roamly.app.model.ChecklistItem
 import com.roamly.app.model.DestinationItem
 import com.roamly.app.model.TravellerRecord
+import com.roamly.app.model.TinkerspaceWorkflowState
 import com.roamly.app.model.Trip
 import com.roamly.app.model.TripStatus
 import com.roamly.app.model.UserRole
@@ -42,6 +43,15 @@ class RoamlyRepository private constructor(context: Context) {
     private val _travellers = MutableStateFlow<List<TravellerRecord>>(emptyList())
     val travellers: StateFlow<List<TravellerRecord>> = _travellers.asStateFlow()
 
+    private val _tinkerspaceWorkflowState = MutableStateFlow<TinkerspaceWorkflowState>(TinkerspaceWorkflowState.UPCOMING)
+    val tinkerspaceWorkflowState: StateFlow<TinkerspaceWorkflowState> = _tinkerspaceWorkflowState.asStateFlow()
+
+    private val _tinkerspaceIsSimulated = MutableStateFlow<Boolean>(false)
+    val tinkerspaceIsSimulated: StateFlow<Boolean> = _tinkerspaceIsSimulated.asStateFlow()
+
+    private val _tinkerspaceBelongingsCheckedTime = MutableStateFlow<Long>(0L)
+    val tinkerspaceBelongingsCheckedTime: StateFlow<Long> = _tinkerspaceBelongingsCheckedTime.asStateFlow()
+
     init {
         loadData()
     }
@@ -59,20 +69,47 @@ class RoamlyRepository private constructor(context: Context) {
             if (tripsJson != null) {
                 val type = object : TypeToken<List<Trip>>() {}.type
                 val loaded: List<Trip>? = gson.fromJson(tripsJson, type)
-                // Ensure Singapore is always present and remove obsolete fake trips
-                val validTrips = loaded?.filter { it.id == "trip_singapore_2026" || (!it.id.startsWith("trip_penang") && !it.id.startsWith("trip_kyoto")) }
-                val hasSingapore = validTrips?.any { it.id == "trip_singapore_2026" } == true
-                _trips.value = if (hasSingapore && !validTrips.isNullOrEmpty()) {
-                    validTrips
-                } else {
-                    SampleData.sampleTrips
+                val validTrips = loaded?.filter {
+                    it.id == "trip_singapore_2026" || it.id == "trip_tinkerspace_demo" || (!it.id.startsWith("trip_penang") && !it.id.startsWith("trip_kyoto"))
+                }?.toMutableList() ?: mutableListOf()
+
+                if (validTrips.none { it.id == "trip_singapore_2026" }) {
+                    validTrips.add(0, SampleData.singaporeTrip)
                 }
+                if (validTrips.none { it.id == "trip_tinkerspace_demo" }) {
+                    validTrips.add(SampleData.tinkerspaceTrip)
+                }
+                _trips.value = validTrips
+                saveTrips(validTrips)
             } else {
                 _trips.value = SampleData.sampleTrips
                 saveTrips(_trips.value)
             }
         } catch (e: Exception) {
             _trips.value = SampleData.sampleTrips
+        }
+
+        // Load Tinkerspace Workflow State
+        try {
+            val savedTinkerState = prefs.getString(KEY_TINKERSPACE_WORKFLOW_STATE, null)
+            _tinkerspaceWorkflowState.value = if (savedTinkerState != null) {
+                try {
+                    TinkerspaceWorkflowState.valueOf(savedTinkerState)
+                } catch (e: Exception) {
+                    TinkerspaceWorkflowState.UPCOMING
+                }
+            } else {
+                val tinkerTrip = _trips.value.find { it.id == "trip_tinkerspace_demo" }
+                when (tinkerTrip?.status) {
+                    TripStatus.COMPLETED -> TinkerspaceWorkflowState.COMPLETED
+                    TripStatus.IN_PROGRESS -> TinkerspaceWorkflowState.IN_PROGRESS
+                    else -> TinkerspaceWorkflowState.UPCOMING
+                }
+            }
+            _tinkerspaceIsSimulated.value = prefs.getBoolean(KEY_TINKERSPACE_IS_SIMULATED, false)
+            _tinkerspaceBelongingsCheckedTime.value = prefs.getLong(KEY_TINKERSPACE_BELONGINGS_TIME, 0L)
+        } catch (e: Exception) {
+            _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.UPCOMING
         }
 
         // Load Checklist
@@ -322,6 +359,101 @@ class RoamlyRepository private constructor(context: Context) {
         _currentTripId.value = "trip_singapore_2026"
         _selectedRole.value = null
         prefs.edit().remove(KEY_ROLE).apply()
+        resetTinkerspaceDemo()
+    }
+
+    // Tinkerspace Demo Workflow Operations
+    fun startTinkerspaceTrip() {
+        _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.IN_PROGRESS
+        prefs.edit().putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.IN_PROGRESS.name).apply()
+        updateTripStatus("trip_tinkerspace_demo", TripStatus.IN_PROGRESS)
+    }
+
+    fun reachTinkerspaceOutdoorStop(isSimulated: Boolean = false) {
+        if (_tinkerspaceWorkflowState.value == TinkerspaceWorkflowState.UPCOMING ||
+            _tinkerspaceWorkflowState.value == TinkerspaceWorkflowState.IN_PROGRESS) {
+            _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
+            _tinkerspaceIsSimulated.value = isSimulated
+            prefs.edit()
+                .putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED.name)
+                .putBoolean(KEY_TINKERSPACE_IS_SIMULATED, isSimulated)
+                .apply()
+            markDestinationCompleted("trip_tinkerspace_demo", "dest_tinker_outside")
+        }
+    }
+
+    fun reachTinkerspaceIndoorStop(isSimulated: Boolean = false) {
+        if (_tinkerspaceWorkflowState.value == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED) {
+            _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.INDOOR_STOP_REACHED
+            _tinkerspaceIsSimulated.value = isSimulated
+            prefs.edit()
+                .putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.INDOOR_STOP_REACHED.name)
+                .putBoolean(KEY_TINKERSPACE_IS_SIMULATED, isSimulated)
+                .apply()
+            markDestinationCompleted("trip_tinkerspace_demo", "dest_tinker_inside")
+        }
+    }
+
+    fun proceedToBelongingsCheck() {
+        _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK
+        prefs.edit().putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK.name).apply()
+    }
+
+    fun confirmTinkerspaceBelongingsChecked(timestamp: Long = System.currentTimeMillis()) {
+        _tinkerspaceBelongingsCheckedTime.value = timestamp
+        _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION
+        prefs.edit()
+            .putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION.name)
+            .putLong(KEY_TINKERSPACE_BELONGINGS_TIME, timestamp)
+            .apply()
+    }
+
+    fun endTinkerspaceTrip() {
+        _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.COMPLETED
+        prefs.edit().putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.COMPLETED.name).apply()
+        updateTripStatus("trip_tinkerspace_demo", TripStatus.COMPLETED)
+    }
+
+    fun resetTinkerspaceDemo() {
+        _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.UPCOMING
+        _tinkerspaceIsSimulated.value = false
+        _tinkerspaceBelongingsCheckedTime.value = 0L
+        prefs.edit()
+            .putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.UPCOMING.name)
+            .putBoolean(KEY_TINKERSPACE_IS_SIMULATED, false)
+            .putLong(KEY_TINKERSPACE_BELONGINGS_TIME, 0L)
+            .apply()
+
+        val updatedTrips = _trips.value.map { trip ->
+            if (trip.id == "trip_tinkerspace_demo") {
+                trip.copy(
+                    status = TripStatus.UPCOMING,
+                    days = trip.days.map { day ->
+                        day.copy(destinations = day.destinations.map { it.copy(isCompleted = false) })
+                    }
+                )
+            } else trip
+        }
+        _trips.value = updatedTrips
+        saveTrips(updatedTrips)
+    }
+
+    private fun markDestinationCompleted(tripId: String, destId: String) {
+        val updated = _trips.value.map { trip ->
+            if (trip.id == tripId) {
+                trip.copy(
+                    days = trip.days.map { day ->
+                        day.copy(
+                            destinations = day.destinations.map { dest ->
+                                if (dest.id == destId) dest.copy(isCompleted = true) else dest
+                            }
+                        )
+                    }
+                )
+            } else trip
+        }
+        _trips.value = updated
+        saveTrips(updated)
     }
 
     private fun saveTrips(trips: List<Trip>) {
@@ -346,6 +478,9 @@ class RoamlyRepository private constructor(context: Context) {
         private const val KEY_CHECKLIST = "key_checklist"
         private const val KEY_CHAT = "key_chat"
         private const val KEY_TRAVELLERS = "key_travellers"
+        private const val KEY_TINKERSPACE_WORKFLOW_STATE = "key_tinkerspace_workflow_state"
+        private const val KEY_TINKERSPACE_IS_SIMULATED = "key_tinkerspace_is_simulated"
+        private const val KEY_TINKERSPACE_BELONGINGS_TIME = "key_tinkerspace_belongings_time"
 
         @Volatile
         private var instance: RoamlyRepository? = null

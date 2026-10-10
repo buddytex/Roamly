@@ -12,6 +12,16 @@ enum class TripStatus(val displayName: String) {
     COMPLETED("Completed")
 }
 
+enum class TinkerspaceWorkflowState {
+    UPCOMING,
+    IN_PROGRESS,
+    OUTDOOR_STOP_REACHED,
+    INDOOR_STOP_REACHED,
+    AWAITING_BELONGINGS_CHECK,
+    AWAITING_FINAL_CONFIRMATION,
+    COMPLETED
+}
+
 enum class ChecklistCategory(val displayName: String) {
     DOCUMENTS("Travel Documents"),
     ESSENTIALS("Daily Essentials"),

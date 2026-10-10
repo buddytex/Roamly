@@ -140,15 +140,25 @@ fun MyTripsScreen(
             onPlanNewTrip = { showPlanTripDialog = true }
         )
     } else {
-        // VIEW 2: Daily Itinerary for selected trip
-        DailyItineraryView(
-            trip = activeTripForItinerary!!,
-            repository = repository,
-            onBackToTrips = { activeTripForItinerary = null },
-            onTriggerBelongingsReminder = { dest ->
-                showBelongingsDialogForDest = dest
-            }
-        )
+        if (activeTripForItinerary?.id == "trip_tinkerspace_demo") {
+            TinkerspaceDemoScreen(
+                repository = repository,
+                onBack = { activeTripForItinerary = null },
+                onReviewChecklist = {
+                    activeTripForItinerary = null
+                }
+            )
+        } else {
+            // VIEW 2: Daily Itinerary for selected trip
+            DailyItineraryView(
+                trip = activeTripForItinerary!!,
+                repository = repository,
+                onBackToTrips = { activeTripForItinerary = null },
+                onTriggerBelongingsReminder = { dest ->
+                    showBelongingsDialogForDest = dest
+                }
+            )
+        }
     }
 }
 
@@ -321,9 +331,23 @@ private fun TripCardItem(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "Sample Itinerary",
+                            text = "5-Day Journey",
                             style = MaterialTheme.typography.labelSmall,
                             color = RoamlyPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else if (trip.id == "trip_tinkerspace_demo") {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(RoamlyAccentContainer)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "Demo Journey",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = RoamlyAccent,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -398,7 +422,7 @@ private fun TripCardItem(
                 colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
             ) {
                 Text(
-                    text = "Open Trip",
+                    text = if (trip.id == "trip_tinkerspace_demo") "Open Demo Journey" else "View Travel Plan",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = RoamlySurface

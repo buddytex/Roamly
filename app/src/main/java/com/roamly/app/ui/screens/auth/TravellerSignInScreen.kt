@@ -23,11 +23,14 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -124,6 +127,39 @@ fun TravellerSignInScreen(
         // Error Banner
         if (formErrors.generalError != null) {
             AuthErrorBanner(message = formErrors.generalError!!)
+            
+            if (formErrors.generalError!!.contains("verified", ignoreCase = true) ||
+                formErrors.generalError!!.contains("confirmation link", ignoreCase = true)) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = RoamlySurface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, RoamlyBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "Email verification is required by default in your Supabase project. You can click the link in your inbox (or in Supabase Dashboard -> Auth -> Users -> click 'Confirm user').",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = RoamlyTextSecondary,
+                            lineHeight = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = { authViewModel.signInAsDemo(UserRole.TRAVELLER) },
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                        ) {
+                            Text(
+                                text = "Instant Demo Access (Bypass Verification)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -242,6 +278,25 @@ fun TravellerSignInScreen(
             },
             isLoading = isLoading
         )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Demo Traveller Fast Sign-In
+        OutlinedButton(
+            onClick = { authViewModel.signInAsDemo(UserRole.TRAVELLER) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, RoamlyPrimary)
+        ) {
+            Text(
+                text = "Demo Sign-In (Skip for Hackathon)",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = RoamlyPrimary
+            )
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
