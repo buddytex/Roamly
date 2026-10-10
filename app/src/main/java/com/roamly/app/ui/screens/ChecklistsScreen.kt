@@ -22,11 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Luggage
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,15 +37,18 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,6 +73,7 @@ import com.roamly.app.ui.theme.RoamlyAccent
 import com.roamly.app.ui.theme.RoamlyAccentContainer
 import com.roamly.app.ui.theme.RoamlyBackground
 import com.roamly.app.ui.theme.RoamlyBorder
+import com.roamly.app.ui.theme.RoamlyError
 import com.roamly.app.ui.theme.RoamlyPrimary
 import com.roamly.app.ui.theme.RoamlyPrimaryContainer
 import com.roamly.app.ui.theme.RoamlySuccess
@@ -80,63 +87,82 @@ fun ChecklistsScreen(
     repository: RoamlyRepository
 ) {
     val checklist by repository.checklist.collectAsState()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Packing List, 1: Belongings Reminder, 2: Documents
+    val trips by repository.trips.collectAsState()
+    val currentTrip = repository.getCurrentTrip() ?: trips.firstOrNull()
+
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Packing List, 1: Travel Preparation, 2: Belongings Reminder
     var selectedCategoryFilter by remember { mutableStateOf<ChecklistCategory?>(null) }
     var showAddItemDialog by remember { mutableStateOf(false) }
     var showTestReminderDialog by remember { mutableStateOf(false) }
 
     val totalItems = checklist.size
-    val packedItems = checklist.count { it.isPacked }
-    val progress = if (totalItems > 0) packedItems.toFloat() / totalItems.toFloat() else 0f
+    val checkedItems = checklist.count { it.isPacked }
+    val progress = if (totalItems > 0) checkedItems.toFloat() / totalItems.toFloat() else 0f
+
+    val categories = listOf(
+        ChecklistCategory.DOCUMENTS,
+        ChecklistCategory.CLOTHING,
+        ChecklistCategory.ESSENTIALS,
+        ChecklistCategory.ELECTRONICS,
+        ChecklistCategory.HEALTH
+    )
 
     if (showTestReminderDialog) {
         BelongingsReminderDialog(
-            destinationName = "Current Destination (Demo Preview)",
+            destinationName = "Current Location",
             onDismiss = { showTestReminderDialog = false },
             onConfirmed = { showTestReminderDialog = false }
         )
     }
 
     if (showAddItemDialog) {
-        var newItemText by remember { mutableStateOf("") }
-        var selectedCat by remember { mutableStateOf(ChecklistCategory.ESSENTIALS) }
+        var newItemTitle by remember { mutableStateOf("") }
+        var newItemCategory by remember { mutableStateOf(ChecklistCategory.ESSENTIALS) }
 
         AlertDialog(
             onDismissRequest = { showAddItemDialog = false },
             title = {
                 Text(
-                    text = "Add Packing Item",
+                    text = "Add an Item",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = RoamlyTextPrimary
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     OutlinedTextField(
-                        value = newItemText,
-                        onValueChange = { newItemText = it },
-                        placeholder = { Text("Item name (e.g., Swimwear, Sunglasses)") },
+                        value = newItemTitle,
+                        onValueChange = { newItemTitle = it },
+                        label = { Text("Item name") },
+                        placeholder = { Text("e.g., Sun hat, Universal plug...") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RoamlyPrimary,
+                            unfocusedBorderColor = RoamlyBorder
+                        )
                     )
-                    Text("Category:", style = MaterialTheme.typography.labelMedium, color = RoamlyTextSecondary)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(ChecklistCategory.values()) { cat ->
-                            val isCatSelected = selectedCat == cat
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isCatSelected) RoamlyPrimary else RoamlySurfaceVariant)
-                                    .clickable { selectedCat = cat }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = cat.displayName.take(12),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isCatSelected) RoamlySurface else RoamlyTextPrimary
+
+                    Text(
+                        text = "Category:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = RoamlyTextPrimary
+                    )
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(categories) { cat ->
+                            val isSelected = newItemCategory == cat
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { newItemCategory = cat },
+                                label = { Text(cat.displayName, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = RoamlyPrimary,
+                                    selectedLabelColor = RoamlySurface
                                 )
-                            }
+                            )
                         }
                     }
                 }
@@ -144,137 +170,155 @@ fun ChecklistsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newItemText.isNotBlank()) {
-                            repository.addChecklistItem(newItemText, selectedCat)
+                        if (newItemTitle.isNotBlank()) {
+                            repository.addChecklistItem(newItemTitle, newItemCategory)
                             showAddItemDialog = false
                         }
                     },
+                    shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
                 ) {
-                    Text("Add")
+                    Text("Add Item")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddItemDialog = false }) {
                     Text("Cancel", color = RoamlyTextSecondary)
                 }
-            }
+            },
+            containerColor = RoamlySurface,
+            shape = RoundedCornerShape(20.dp)
         )
     }
 
-    Scaffold(
-        floatingActionButton = {
-            if (selectedTab == 0) {
-                FloatingActionButton(
-                    onClick = { showAddItemDialog = true },
-                    containerColor = RoamlyPrimary,
-                    contentColor = RoamlySurface,
-                    shape = CircleShape
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "Add Item")
-                }
-            }
-        }
-    ) { innerPadding ->
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RoamlyBackground)
+    ) {
+        // Screen Header
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(RoamlyBackground)
-                .padding(innerPadding)
+                .fillMaxWidth()
+                .background(RoamlySurface)
+                .padding(horizontal = 20.dp, vertical = 14.dp)
+                .border(0.5.dp, RoamlyBorder)
         ) {
-            // Header
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(RoamlySurface)
-                    .padding(horizontal = 20.dp, vertical = 14.dp)
-            ) {
-                Text(
-                    text = "Preparation & Checklists",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = RoamlyTextPrimary
-                )
-                Text(
-                    text = "Persistent pack items, departure belongings & document guidelines",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = RoamlyTextSecondary
-                )
-            }
+            Text(
+                text = "Things to Remember",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = RoamlyTextPrimary
+            )
+            Text(
+                text = "Organise your packing, documents, and non-destructive departure checks.",
+                style = MaterialTheme.typography.bodySmall,
+                color = RoamlyTextSecondary
+            )
 
-            // Top Tab Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Navigation Tabs
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = RoamlySurface,
+                contentColor = RoamlyPrimary,
+                indicator = { tabPositions ->
+                    androidx.compose.material3.TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        color = RoamlyPrimary
+                    )
+                }
             ) {
-                val tabs = listOf("Packing List", "Belongings System", "Documents")
-                tabs.forEachIndexed { index, title ->
-                    val isSelected = selectedTab == index
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) RoamlyPrimary else RoamlySurface)
-                            .border(1.dp, if (isSelected) RoamlyPrimary else RoamlyBorder, RoundedCornerShape(10.dp))
-                            .clickable { selectedTab = index }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = {
                         Text(
-                            text = title,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) RoamlySurface else RoamlyTextSecondary
+                            text = "Packing List",
+                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 14.sp
                         )
                     }
-                }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Text(
+                            text = "Preparation",
+                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 14.sp
+                        )
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = {
+                        Text(
+                            text = "Belongings Check",
+                            fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 14.sp
+                        )
+                    }
+                )
             }
+        }
 
-            when (selectedTab) {
-                0 -> {
-                    // TAB 0: Packing Checklist
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        // Progress Summary Card
+        when (selectedTab) {
+            0 -> {
+                // TAB 0: PACKING LIST
+                val filteredItems = checklist.filter { item ->
+                    selectedCategoryFilter == null || item.category == selectedCategoryFilter
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Progress Card: "8 of 12 items checked."
                         Card(
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(containerColor = RoamlySurface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, RoamlyBorder, RoundedCornerShape(14.dp))
+                                .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
                         ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
+                            Column(modifier = Modifier.padding(16.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "$packedItems of $totalItems packed",
+                                        text = "$checkedItems of $totalItems items checked",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = RoamlyTextPrimary
                                     )
                                     Text(
-                                        text = "${(progress * 100).toInt()}% Ready",
-                                        style = MaterialTheme.typography.titleSmall,
+                                        text = "${(progress * 100).toInt()}%",
+                                        style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = RoamlyPrimary
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
                                 LinearProgressIndicator(
                                     progress = { progress },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(3.dp)),
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
                                     color = RoamlyPrimary,
                                     trackColor = RoamlySurfaceVariant
                                 )
@@ -283,338 +327,312 @@ fun ChecklistsScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Category Filter Chips
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        // Category Filters & Add Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            item {
-                                FilterChip(
-                                    label = "All (${checklist.size})",
-                                    selected = selectedCategoryFilter == null,
-                                    onClick = { selectedCategoryFilter = null }
-                                )
-                            }
-                            items(ChecklistCategory.values()) { cat ->
-                                val count = checklist.count { it.category == cat }
-                                FilterChip(
-                                    label = "${cat.displayName.take(12)} ($count)",
-                                    selected = selectedCategoryFilter == cat,
-                                    onClick = { selectedCategoryFilter = cat }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Checklist Items
-                        val filteredItems = if (selectedCategoryFilter != null) {
-                            checklist.filter { it.category == selectedCategoryFilter }
-                        } else {
-                            checklist
-                        }
-
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(filteredItems, key = { it.id }) { item ->
-                                Card(
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .border(
-                                            1.dp,
-                                            if (item.isPacked) RoamlySuccess.copy(alpha = 0.3f) else RoamlyBorder,
-                                            RoundedCornerShape(12.dp)
-                                        )
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Checkbox(
-                                            checked = item.isPacked,
-                                            onCheckedChange = { repository.toggleChecklistItem(item.id) },
-                                            colors = CheckboxDefaults.colors(
-                                                checkedColor = RoamlyPrimary,
-                                                checkmarkColor = RoamlySurface
-                                            )
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = item.title,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = if (item.isPacked) FontWeight.Normal else FontWeight.Medium,
-                                                color = if (item.isPacked) RoamlyTextSecondary else RoamlyTextPrimary
-                                            )
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = item.category.displayName,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = RoamlyTextSecondary
-                                                )
-                                                if (item.isBelongingItem) {
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(4.dp))
-                                                            .background(RoamlyAccentContainer)
-                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = "Departure Essential",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = RoamlyTextPrimary,
-                                                            fontSize = 10.sp
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        IconButton(
-                                            onClick = { repository.deleteChecklistItem(item.id) },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Delete",
-                                                tint = RoamlyTextSecondary.copy(alpha = 0.6f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            item {
-                                Spacer(modifier = Modifier.height(70.dp))
-                            }
-                        }
-                    }
-                }
-
-                1 -> {
-                    // TAB 1: Belongings Departure System Explanation
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        item {
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = RoamlyPrimaryContainer.copy(alpha = 0.5f)),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, RoamlyPrimary.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .background(RoamlyPrimary),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Luggage,
-                                                contentDescription = null,
-                                                tint = RoamlySurface,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = "Zero-Lost Belongings Guarantee",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = RoamlyTextPrimary
-                                            )
-                                            Text(
-                                                text = "Preserves your checklist without destructive resets",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = RoamlyTextSecondary
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    Text(
-                                        text = "Whenever you leave a museum, temple, or hawker market, Roamly prompts you with a quick pocket-and-bag verification dialog.\n\nKey Design Principle:\n• Belongings checklist state is NEVER automatically cleared or unchecked on departure.\n• Leaving a stop simply triggers a polite verification workflow to ensure items like your passport, wallet, or phone charger stay with you throughout your 5-day journey.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = RoamlyTextPrimary,
-                                        lineHeight = 20.sp
-                                    )
-
-                                    Spacer(modifier = Modifier.height(14.dp))
-
-                                    Button(
-                                        onClick = { showTestReminderDialog = true },
-                                        colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Text("Preview Departure Reminder Dialog")
-                                    }
-                                }
-                            }
-                        }
-
-                        item {
                             Text(
-                                text = "High-Risk Departure Items Tracked:",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "Categories",
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = RoamlyTextPrimary
                             )
+
+                            Button(
+                                onClick = { showAddItemDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Add an Item",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
-                        items(SampleData.belongingDepartureItems) { item ->
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, RoamlyBorder, RoundedCornerShape(12.dp))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = selectedCategoryFilter == null,
+                                    onClick = { selectedCategoryFilter = null },
+                                    label = { Text("All (${checklist.size})") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = RoamlyPrimary,
+                                        selectedLabelColor = RoamlySurface
+                                    )
+                                )
+                            }
+                            items(categories) { cat ->
+                                val count = checklist.count { it.category == cat }
+                                val isSelected = selectedCategoryFilter == cat
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedCategoryFilter = if (isSelected) null else cat },
+                                    label = { Text("${cat.displayName} ($count)") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = RoamlyPrimary,
+                                        selectedLabelColor = RoamlySurface
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    items(filteredItems, key = { it.id }) { item ->
+                        ChecklistItemRow(
+                            item = item,
+                            onToggle = { repository.toggleChecklistItem(item.id) },
+                            onDelete = { repository.deleteChecklistItem(item.id) }
+                        )
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
+            }
+
+            1 -> {
+                // TAB 1: TRAVEL PREPARATION (3 Main Tasks)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Travel Preparation Tasks",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlyTextPrimary
+                        )
+                        Text(
+                            text = "Complete these three essential steps before travelling.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = RoamlyTextSecondary
+                        )
+                    }
+
+                    // Task 1: Check My Documents
+                    item {
+                        PreparationTaskCard(
+                            taskNumber = "1",
+                            title = "Check My Documents",
+                            description = "Submit your electronic SG Arrival Card (SGAC) within 3 days before entry. Ensure passport has at least 6 months validity.",
+                            isDone = checkedItems >= 2,
+                            actionLabel = "Review Official Guidance",
+                            officialSource = "Official ICA Singapore Portal (https://eservices.ica.gov.sg/sgarrivalcard)"
+                        )
+                    }
+
+                    // Task 2: Prepare My Packing List
+                    item {
+                        PreparationTaskCard(
+                            taskNumber = "2",
+                            title = "Prepare My Packing List",
+                            description = "Review essentials: clothing, power adapters (Type G 3-pin for Singapore), medications, and electronics.",
+                            isDone = checkedItems >= totalItems / 2,
+                            actionLabel = "Open Packing List",
+                            onClickAction = { selectedTab = 0 }
+                        )
+                    }
+
+                    // Task 3: Review My Travel Plan
+                    item {
+                        PreparationTaskCard(
+                            taskNumber = "3",
+                            title = "Review My Travel Plan",
+                            description = "Familiarise yourself with Day 1 Marina Bay and Day 2 Chinatown itineraries. Check activity opening hours and river cruise times.",
+                            isDone = true,
+                            actionLabel = "View Itinerary"
+                        )
+                    }
+
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = RoamlySurfaceVariant),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = Icons.Default.Security,
+                                        imageVector = Icons.Default.Info,
                                         contentDescription = null,
                                         tint = RoamlyPrimary,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = item,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
+                                        text = "Official Advisory Disclaimer",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
                                         color = RoamlyTextPrimary
                                     )
                                 }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Roamly provides helpful checklists and direct links to government authorities. Completing this checklist does not issue or guarantee visas. Always verify entry conditions on official government portals.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = RoamlyTextSecondary,
+                                    lineHeight = 16.sp
+                                )
                             }
-                        }
-
-                        item {
-                            Spacer(modifier = Modifier.height(20.dp))
                         }
                     }
+
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
                 }
+            }
 
-                2 -> {
-                    // TAB 2: Travel Documents & Immigration Guidance
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        item {
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = RoamlyAccentContainer.copy(alpha = 0.5f)),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, RoamlyAccent.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = null,
-                                            tint = RoamlyAccent,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "Official Immigration Disclaimer",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = RoamlyTextPrimary
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "Roamly provides travel preparation tools and links to official resources, but does NOT issue, guarantee, or process visas. Travellers must always consult the official Singapore Immigration & Checkpoints Authority (ICA) for their nationality's specific entry criteria.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = RoamlyTextPrimary,
-                                        lineHeight = 18.sp
-                                    )
-                                }
-                            }
-                        }
+            2 -> {
+                // TAB 2: BELONGINGS REMINDER
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Belongings Check",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlyTextPrimary
+                        )
+                        Text(
+                            text = "A gentle, non-destructive check whenever you are preparing to leave a hotel, restaurant, or attraction.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = RoamlyTextSecondary,
+                            lineHeight = 22.sp
+                        )
+                    }
 
-                        items(SampleData.documentGuides) { guide ->
-                            Card(
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, RoamlyBorder, RoundedCornerShape(14.dp))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Description,
-                                            contentDescription = null,
-                                            tint = RoamlyPrimary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = guide.title,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = RoamlyTextPrimary
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = guide.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = RoamlyTextSecondary,
-                                        lineHeight = 19.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(10.dp))
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.5.dp, RoamlyAccent.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(RoamlySurfaceVariant)
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .background(RoamlyAccentContainer),
+                                        contentAlignment = Alignment.Center
                                     ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Luggage,
+                                            contentDescription = null,
+                                            tint = RoamlyAccent,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column {
                                         Text(
-                                            text = "Authority: ${guide.officialSource}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = RoamlyPrimary,
-                                            fontWeight = FontWeight.SemiBold
+                                            text = "Before you leave, check that you have everything.",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = RoamlyTextPrimary
+                                        )
+                                        Text(
+                                            text = "Non-destructive reminder • Your list is never cleared",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = RoamlyTextSecondary
                                         )
                                     }
                                 }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Text(
+                                    text = "Quickly verify your most critical belongings:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = RoamlyTextPrimary
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                val essentialBelongings = listOf(
+                                    "Passport & Travel Documents",
+                                    "Wallet & Credit Cards",
+                                    "Smartphone & Charger",
+                                    "Keys / Hotel Keycard",
+                                    "Prescription Glasses / Sunglasses",
+                                    "Water Bottle"
+                                )
+
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    essentialBelongings.forEach { item ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = RoamlyPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = item,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = RoamlyTextPrimary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(18.dp))
+
+                                Button(
+                                    onClick = { showTestReminderDialog = true },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Notifications,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Simulate Departure Check",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
+                    }
 
-                        item {
-                            Spacer(modifier = Modifier.height(20.dp))
-                        }
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
                     }
                 }
             }
@@ -623,24 +641,179 @@ fun ChecklistsScreen(
 }
 
 @Composable
-fun FilterChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
+private fun ChecklistItemRow(
+    item: ChecklistItem,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    Box(
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) RoamlyPrimary else RoamlySurface)
-            .border(1.dp, if (selected) RoamlyPrimary else RoamlyBorder, RoundedCornerShape(10.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .fillMaxWidth()
+            .border(1.dp, RoamlyBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onToggle)
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = if (selected) RoamlySurface else RoamlyTextSecondary
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Large touch target checkbox
+            Checkbox(
+                checked = item.isPacked,
+                onCheckedChange = { onToggle() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = RoamlyPrimary,
+                    uncheckedColor = RoamlyBorder
+                ),
+                modifier = Modifier.size(28.dp)
+            )
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (item.isPacked) FontWeight.Normal else FontWeight.SemiBold,
+                    color = if (item.isPacked) RoamlyTextSecondary else RoamlyTextPrimary,
+                    fontSize = 17.sp
+                )
+                Text(
+                    text = item.category.displayName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = RoamlyTextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete item",
+                    tint = RoamlyTextSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreparationTaskCard(
+    taskNumber: String,
+    title: String,
+    description: String,
+    isDone: Boolean,
+    actionLabel: String,
+    officialSource: String? = null,
+    onClickAction: (() -> Unit)? = null
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, RoamlyBorder, RoundedCornerShape(18.dp))
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(if (isDone) RoamlySuccess.copy(alpha = 0.2f) else RoamlyPrimaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = taskNumber,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDone) RoamlySuccess else RoamlyPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary
+                    )
+                }
+
+                if (isDone) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(RoamlySuccess.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Completed",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlySuccess
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = RoamlyTextSecondary,
+                lineHeight = 20.sp
+            )
+
+            if (officialSource != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.OpenInNew,
+                        contentDescription = null,
+                        tint = RoamlyPrimary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = officialSource,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            if (onClickAction != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onClickAction,
+                    modifier = Modifier.height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimaryContainer)
+                ) {
+                    Text(
+                        text = actionLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = RoamlyPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }

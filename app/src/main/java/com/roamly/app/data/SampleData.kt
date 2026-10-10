@@ -8,6 +8,7 @@ import com.roamly.app.model.DocumentGuide
 import com.roamly.app.model.Trip
 import com.roamly.app.model.TripDay
 import com.roamly.app.model.TripStatus
+import com.roamly.app.model.TravellerRecord
 
 object SampleData {
 
@@ -19,10 +20,17 @@ object SampleData {
             country = "Singapore",
             dates = "Oct 12 – 16, 2026",
             durationDays = 5,
-            travelerCount = 2,
-            travelers = listOf("Alex Chen", "Maya Lin"),
+            travelerCount = 4,
+            travelers = listOf("Alex Chen", "Maya Lin", "David Tan", "Sarah Jenkins"),
             status = TripStatus.UPCOMING,
             summary = "A serene 5-day journey blending futuristic architecture, lush garden canopies, vibrant cultural enclaves, and world-renowned hawker cuisine.",
+            meetingPoint = "Changi Airport T3 Arrival Hall / Pan Pacific Lobby",
+            announcements = listOf(
+                "Welcome to Singapore! Meet at Pan Pacific Lobby at 09:30 AM tomorrow for morning briefing.",
+                "Remember to wear lightweight modest attire covering shoulders & knees for the Chinatown temple stop."
+            ),
+            maxGroupSize = 8,
+            isGuideManaged = true,
             days = listOf(
                 TripDay(
                     dayNumber = 1,
@@ -310,6 +318,23 @@ object SampleData {
             )
         ),
         Trip(
+            id = "trip_penang_2026",
+            title = "Penang Culinary & Shophouses",
+            destination = "Penang",
+            country = "Malaysia",
+            dates = "Nov 5 – 8, 2026",
+            durationDays = 4,
+            travelerCount = 3,
+            travelers = listOf("Alex Chen", "Maya Lin", "Kenji Sato"),
+            status = TripStatus.PLANNING,
+            summary = "Street food trails in historic George Town, clan jetties, and spice garden explorations.",
+            meetingPoint = "Eastern & Oriental Hotel Lobby, George Town",
+            announcements = listOf("Draft itinerary prepared; passport validity check pending for travellers."),
+            maxGroupSize = 6,
+            isGuideManaged = true,
+            days = emptyList()
+        ),
+        Trip(
             id = "trip_kyoto_past",
             title = "Kyoto Zen & Ancient Shrines",
             destination = "Kyoto",
@@ -320,6 +345,10 @@ object SampleData {
             travelers = listOf("Alex Chen", "Maya Lin"),
             status = TripStatus.COMPLETED,
             summary = "Tranquil bamboo groves, vermillion torii corridors, and traditional matcha ceremonies in historic Kyoto.",
+            meetingPoint = "Kyoto Station Central Gate",
+            announcements = listOf("Trip successfully completed. Thank you for travelling with us!"),
+            maxGroupSize = 6,
+            isGuideManaged = false,
             days = emptyList()
         )
     )
@@ -389,4 +418,68 @@ object SampleData {
         "Prescription Glasses / Sunglasses",
         "Insulated Water Bottle"
     )
+
+    val sampleTravellers: List<TravellerRecord> = listOf(
+        TravellerRecord(
+            id = "trav_alex",
+            name = "Alex Chen",
+            assignedTripId = "trip_singapore_2026",
+            assignedTripName = "Singapore Explorer",
+            preparationStatus = "Ready",
+            packedItemsCount = 14,
+            totalItemsCount = 23,
+            visitedActivitiesCount = 2,
+            totalActivitiesCount = 3,
+            contactPhone = "+65 9123 4567"
+        ),
+        TravellerRecord(
+            id = "trav_maya",
+            name = "Maya Lin",
+            assignedTripId = "trip_singapore_2026",
+            assignedTripName = "Singapore Explorer",
+            preparationStatus = "Ready",
+            packedItemsCount = 14,
+            totalItemsCount = 23,
+            visitedActivitiesCount = 2,
+            totalActivitiesCount = 3,
+            contactPhone = "+65 9234 5678"
+        ),
+        TravellerRecord(
+            id = "trav_david",
+            name = "David Tan",
+            assignedTripId = "trip_singapore_2026",
+            assignedTripName = "Singapore Explorer",
+            preparationStatus = "Preparation Incomplete",
+            packedItemsCount = 6,
+            totalItemsCount = 23,
+            visitedActivitiesCount = 0,
+            totalActivitiesCount = 3,
+            contactPhone = "+65 9345 6789"
+        ),
+        TravellerRecord(
+            id = "trav_sarah",
+            name = "Sarah Jenkins",
+            assignedTripId = "trip_singapore_2026",
+            assignedTripName = "Singapore Explorer",
+            preparationStatus = "Documents Pending",
+            packedItemsCount = 8,
+            totalItemsCount = 23,
+            visitedActivitiesCount = 0,
+            totalActivitiesCount = 3,
+            contactPhone = "+1 415 555 0192"
+        ),
+        TravellerRecord(
+            id = "trav_kenji",
+            name = "Kenji Sato",
+            assignedTripId = "trip_penang_2026",
+            assignedTripName = "Penang Culinary & Shophouses",
+            preparationStatus = "Ready",
+            packedItemsCount = 18,
+            totalItemsCount = 20,
+            visitedActivitiesCount = 0,
+            totalActivitiesCount = 0,
+            contactPhone = "+81 90 1234 5678"
+        )
+    )
 }
+

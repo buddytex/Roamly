@@ -25,15 +25,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +53,7 @@ import com.roamly.app.ai.RoamlyAiCompanion
 import com.roamly.app.data.RoamlyRepository
 import com.roamly.app.model.ChatMessage
 import com.roamly.app.model.ChatSender
-import com.roamly.app.ui.theme.RoamlyAccent
+import com.roamly.app.ui.theme.RoamlyAccentContainer
 import com.roamly.app.ui.theme.RoamlyBackground
 import com.roamly.app.ui.theme.RoamlyBorder
 import com.roamly.app.ui.theme.RoamlyPrimary
@@ -70,10 +71,17 @@ fun AiCompanionScreen(
 ) {
     val messages by repository.chatMessages.collectAsState()
     val trips by repository.trips.collectAsState()
-    val currentTrip = trips.firstOrNull { it.id == "trip_singapore_2026" } ?: trips.firstOrNull()
+    val currentTrip = repository.getCurrentTrip() ?: trips.firstOrNull()
 
     var inputText by remember { mutableStateOf(initialPrompt ?: "") }
     val listState = rememberLazyListState()
+
+    val suggestedQuestions = listOf(
+        "What should I pack?",
+        "What can I visit today?",
+        "How do I get there?",
+        "What should I know before visiting?"
+    )
 
     fun sendMessage(query: String) {
         if (query.isBlank()) return
@@ -84,7 +92,7 @@ fun AiCompanionScreen(
         )
         repository.addChatMessage(userMsg)
 
-        // Generate response via Roamly Context Engine
+        // Generate response using Roamly Offline Context Engine
         val assistantMsg = RoamlyAiCompanion.generateResponse(query, currentTrip)
         repository.addChatMessage(assistantMsg)
         inputText = ""
@@ -102,141 +110,139 @@ fun AiCompanionScreen(
             .background(RoamlyBackground)
             .imePadding()
     ) {
-        // Assistant Top Header Bar
+        // Top App Bar Header
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(RoamlySurface)
                 .padding(horizontal = 20.dp, vertical = 14.dp)
+                .border(0.5.dp, RoamlyBorder)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(RoamlyPrimaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "Travel Help",
+                        tint = RoamlyPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Travel Help",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary
+                    )
+                    Text(
+                        text = "Ask me about your trip, places to visit, or things you need to prepare.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Offline Assistance Badge
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(RoamlySurfaceVariant)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(RoamlyPrimary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = RoamlySurface,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Roamly AI Companion",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = RoamlyTextPrimary
-                        )
-                        Text(
-                            text = "Local Trip Context Engine • Singapore 5-Day Guide",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = RoamlyTextSecondary
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(RoamlyPrimaryContainer)
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = RoamlyPrimary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "OFFLINE READY",
+                        text = "Offline Assistant • Answers based on your itinerary and travel guidance",
                         style = MaterialTheme.typography.labelSmall,
-                        color = RoamlyPrimary,
-                        fontWeight = FontWeight.Bold
+                        color = RoamlyTextSecondary
                     )
                 }
             }
         }
 
-        // Quick Suggestion Chips Carousel
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val quickChips = listOf(
-                "Near Marina Bay",
-                "3 Hours Free",
-                "History in simple words",
-                "Today's activities",
-                "What to pack?",
-                "Precautions & rules"
-            )
-            items(quickChips) { chipText ->
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(RoamlySurface)
-                        .border(1.dp, RoamlyBorder, RoundedCornerShape(12.dp))
-                        .clickable {
-                            val fullPrompt = when (chipText) {
-                                "Near Marina Bay" -> "What should I explore near Marina Bay?"
-                                "3 Hours Free" -> "What can I do with three hours free?"
-                                "History in simple words" -> "Explain the history of this place in simple language."
-                                "Today's activities" -> "What activities are planned for today?"
-                                "What to pack?" -> "What should I pack for my trip?"
-                                "Precautions & rules" -> "What precautions should I know about this activity?"
-                                else -> chipText
-                            }
-                            sendMessage(fullPrompt)
-                        }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = chipText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = RoamlyPrimary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-
-        // Messages Feed
+        // Chat Message Stream
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            items(messages) { message ->
-                ChatBubble(
-                    message = message,
-                    onChipClicked = { prompt -> sendMessage(prompt) }
-                )
+            item {
+                Spacer(modifier = Modifier.height(10.dp))
             }
+
+            items(messages, key = { it.id }) { msg ->
+                ChatBubble(message = msg)
+            }
+
             item {
                 Spacer(modifier = Modifier.height(10.dp))
             }
         }
 
-        // Bottom Input Row
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = RoamlySurface,
-            tonalElevation = 4.dp,
-            shadowElevation = 8.dp
+        // Suggested Questions Chips
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(RoamlySurface)
+                .padding(top = 10.dp)
         ) {
+            Text(
+                text = "Suggested Questions:",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = RoamlyTextSecondary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(suggestedQuestions) { prompt ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(RoamlyPrimaryContainer.copy(alpha = 0.6f))
+                            .border(1.dp, RoamlyPrimary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                            .clickable { sendMessage(prompt) }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = prompt,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = RoamlyPrimary
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Large text input and clearly labelled Send button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -244,40 +250,49 @@ fun AiCompanionScreen(
                     onValueChange = { inputText = it },
                     placeholder = {
                         Text(
-                            text = "Ask about Marina Bay, packing, food...",
+                            text = "Ask about places, packing, or advice...",
                             style = MaterialTheme.typography.bodyMedium,
                             color = RoamlyTextSecondary
                         )
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = RoamlySurface,
+                        unfocusedContainerColor = RoamlySurface,
                         focusedBorderColor = RoamlyPrimary,
-                        unfocusedBorderColor = RoamlyBorder,
-                        focusedContainerColor = RoamlySurfaceVariant,
-                        unfocusedContainerColor = RoamlySurfaceVariant
+                        unfocusedBorderColor = RoamlyBorder
                     ),
                     maxLines = 3
                 )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-                Box(
+                Button(
+                    onClick = { sendMessage(inputText) },
+                    enabled = inputText.isNotBlank(),
                     modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(if (inputText.isNotBlank()) RoamlyPrimary else RoamlySurfaceVariant)
-                        .clickable(enabled = inputText.isNotBlank()) {
-                            sendMessage(inputText)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = if (inputText.isNotBlank()) RoamlySurface else RoamlyTextSecondary,
-                        modifier = Modifier.size(20.dp)
+                        .height(52.dp)
+                        .widthIn(min = 84.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = RoamlyPrimary,
+                        disabledContainerColor = RoamlySurfaceVariant
                     )
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Send",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
                 }
             }
         }
@@ -285,20 +300,18 @@ fun AiCompanionScreen(
 }
 
 @Composable
-fun ChatBubble(
-    message: ChatMessage,
-    onChipClicked: (String) -> Unit
-) {
+private fun ChatBubble(message: ChatMessage) {
     val isUser = message.sender == ChatSender.USER
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top
     ) {
         if (!isUser) {
             Box(
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .background(RoamlyPrimary),
                 contentAlignment = Alignment.Center
@@ -307,59 +320,39 @@ fun ChatBubble(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
                     tint = RoamlySurface,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
         }
 
-        Column(
-            modifier = Modifier.widthIn(max = 310.dp),
-            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+        Card(
+            shape = RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 16.dp,
+                bottomStart = if (isUser) 16.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 16.dp
+            ),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isUser) RoamlyPrimary else RoamlySurface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .border(
+                    1.dp,
+                    if (isUser) RoamlyPrimary else RoamlyBorder,
+                    RoundedCornerShape(16.dp)
+                )
         ) {
-            Surface(
-                shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isUser) 16.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 16.dp
-                ),
-                color = if (isUser) RoamlyPrimary else RoamlySurface,
-                border = if (isUser) null else androidx.compose.foundation.BorderStroke(1.dp, RoamlyBorder),
-                shadowElevation = if (isUser) 0.dp else 1.dp
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isUser) RoamlySurface else RoamlyTextPrimary,
-                        lineHeight = 21.sp
-                    )
-                }
-            }
-
-            if (!isUser && message.promptChips.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    message.promptChips.forEach { chip ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(RoamlyPrimaryContainer.copy(alpha = 0.6f))
-                                .clickable { onChipClicked(chip) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "💡 $chip",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = RoamlyPrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isUser) RoamlySurface else RoamlyTextPrimary,
+                    lineHeight = 22.sp,
+                    fontSize = 16.sp
+                )
             }
         }
 
@@ -367,16 +360,16 @@ fun ChatBubble(
             Spacer(modifier = Modifier.width(8.dp))
             Box(
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
-                    .background(RoamlyAccent),
+                    .background(RoamlyAccentContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Person,
                     contentDescription = null,
                     tint = RoamlyTextPrimary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

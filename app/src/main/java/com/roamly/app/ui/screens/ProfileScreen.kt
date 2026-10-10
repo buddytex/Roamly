@@ -2,6 +2,7 @@ package com.roamly.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,9 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.roamly.app.data.RoamlyRepository
+import com.roamly.app.model.UserRole
 import com.roamly.app.ui.theme.RoamlyAccent
 import com.roamly.app.ui.theme.RoamlyAccentContainer
 import com.roamly.app.ui.theme.RoamlyBackground
@@ -58,9 +64,14 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 
 @Composable
 fun ProfileScreen(
-    repository: RoamlyRepository
+    repository: RoamlyRepository,
+    onSwitchRoleRequested: (() -> Unit)? = null
 ) {
+    val currentRole by repository.selectedRole.collectAsState()
+    val trips by repository.trips.collectAsState()
     var showResetDialog by remember { mutableStateOf(false) }
+
+    val isGuide = currentRole == UserRole.GUIDE
 
     if (showResetDialog) {
         AlertDialog(
@@ -75,7 +86,7 @@ fun ProfileScreen(
             },
             text = {
                 Text(
-                    text = "This will restore the default 5-day Singapore itinerary and sample packing checklists.",
+                    text = "This will restore the original 5-day Singapore itinerary, demo checklist items, and return to role selection.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = RoamlyTextSecondary
                 )
@@ -95,7 +106,9 @@ fun ProfileScreen(
                 TextButton(onClick = { showResetDialog = false }) {
                     Text("Cancel", color = RoamlyTextSecondary)
                 }
-            }
+            },
+            containerColor = RoamlySurface,
+            shape = RoundedCornerShape(20.dp)
         )
     }
 
@@ -109,14 +122,15 @@ fun ProfileScreen(
         item {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Traveller Profile",
-                style = MaterialTheme.typography.headlineSmall,
+                text = if (isGuide) "Guide Profile" else "Traveller Profile",
+                style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = RoamlyTextPrimary
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Preferences, travel party & companion settings",
-                style = MaterialTheme.typography.bodySmall,
+                text = "Preferences, accessibility settings, and emergency contacts.",
+                style = MaterialTheme.typography.bodyLarge,
                 color = RoamlyTextSecondary
             )
         }
@@ -132,81 +146,179 @@ fun ProfileScreen(
                     .border(1.dp, RoamlyBorder, RoundedCornerShape(20.dp))
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(CircleShape)
-                                .background(RoamlyPrimaryContainer),
+                                .background(if (isGuide) RoamlyAccentContainer else RoamlyPrimaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                tint = RoamlyPrimary,
+                                contentDescription = "Profile Avatar",
+                                tint = if (isGuide) RoamlyAccent else RoamlyPrimary,
                                 modifier = Modifier.size(32.dp)
                             )
                         }
+
                         Spacer(modifier = Modifier.width(16.dp))
-                        Column {
+
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Alex Chen & Maya Lin",
-                                style = MaterialTheme.typography.titleLarge,
+                                text = if (isGuide) "Alex Chen (Guide)" else "Alex & Maya",
+                                style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = RoamlyTextPrimary
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Couple Travel • 2 Travellers",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = if (isGuide) "Certified Tour Organiser • Singapore" else "Cultural & Culinary Explorer",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary
+                            )
+                        }
+
+                        // Role Badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isGuide) RoamlyAccentContainer else RoamlyPrimaryContainer)
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = if (isGuide) "GUIDE" else "TRAVELLER",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isGuide) RoamlyAccent else RoamlyPrimary
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                    Text(
-                        text = "Travel Interests & Style:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = RoamlyTextPrimary
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("🏛️ Culture & Heritage", "🍜 Hawker Foodie", "🌿 Botanic Greenery").forEach { tag ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(RoamlySurfaceVariant)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = tag,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = RoamlyTextPrimary,
-                                    fontWeight = FontWeight.Medium
-                                )
+                    // Prominent Switch Role Button
+                    Button(
+                        onClick = {
+                            if (onSwitchRoleRequested != null) {
+                                onSwitchRoleRequested()
+                            } else {
+                                repository.clearUserRole()
                             }
-                        }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SwapHoriz,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isGuide) "Switch to Traveller Mode" else "Switch to Guide Mode",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
         }
 
-        // Emergency & Support Info
+        // Section: Preferences & Accessibility
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = RoamlySurface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                    .border(1.dp, RoamlyBorder, RoundedCornerShape(18.dp))
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text(
+                        text = "Preferences & Accessibility",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Preferred Language",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = RoamlyTextPrimary
+                            )
+                        }
+                        Text(
+                            text = "English",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = RoamlyTextSecondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Accessibility / Large Text",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = RoamlyTextPrimary
+                            )
+                        }
+                        Text(
+                            text = "System Scaled (Active)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = RoamlyTextSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section: Destination-specific Emergency Numbers
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, RoamlyBorder, RoundedCornerShape(18.dp))
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -218,76 +330,68 @@ fun ProfileScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Singapore Emergency Contacts",
+                            text = "Destination Emergency Numbers (Singapore)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = RoamlyTextPrimary
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Specific to Singapore. Verified official government contact numbers:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Police:", style = MaterialTheme.typography.bodySmall, color = RoamlyTextSecondary)
-                            Text("999", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = RoamlyTextPrimary)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Ambulance & Fire:", style = MaterialTheme.typography.bodySmall, color = RoamlyTextSecondary)
-                            Text("995", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = RoamlyTextPrimary)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Tourist Hotline (STB):", style = MaterialTheme.typography.bodySmall, color = RoamlyTextSecondary)
-                            Text("1800 736 2000", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = RoamlyTextPrimary)
-                        }
+                        EmergencyContactRow(
+                            label = "Police Emergency",
+                            number = "999",
+                            authority = "Singapore Police Force"
+                        )
+                        EmergencyContactRow(
+                            label = "Ambulance & Fire",
+                            number = "995",
+                            authority = "Singapore Civil Defence Force (SCDF)"
+                        )
+                        EmergencyContactRow(
+                            label = "Tourist Helpline",
+                            number = "1800 736 2000",
+                            authority = "Singapore Tourism Board"
+                        )
                     }
                 }
             }
         }
 
-        // About & Demo Reset
+        // Demo Reset Section
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = RoamlySurface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                    .border(1.dp, RoamlyBorder, RoundedCornerShape(18.dp))
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = RoamlyPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "About Roamly",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = RoamlyTextPrimary
-                        )
-                    }
+                    Text(
+                        text = "Demonstration Settings",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary
+                    )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Roamly is an offline-capable personal travel companion designed for solo travellers, couples, and groups. Built for the Layover 2026 Hackathon (Travel & Tourism track).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = RoamlyTextSecondary,
-                        lineHeight = 19.sp
+                        text = "Reset sample trips, packing lists, and switch back to role selection.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = RoamlyTextSecondary
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -295,16 +399,19 @@ fun ProfileScreen(
                     OutlinedButton(
                         onClick = { showResetDialog = true },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = RoamlyError)
                     ) {
                         Icon(
                             imageVector = Icons.Default.RestartAlt,
                             contentDescription = null,
-                            tint = RoamlyPrimary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Reset Demonstration Data", color = RoamlyPrimary)
+                        Text(
+                            text = "Reset All Demo Data",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -313,5 +420,44 @@ fun ProfileScreen(
         item {
             Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+}
+
+@Composable
+private fun EmergencyContactRow(
+    label: String,
+    number: String,
+    authority: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(RoamlySurfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = RoamlyTextPrimary
+            )
+            Text(
+                text = authority,
+                style = MaterialTheme.typography.bodySmall,
+                color = RoamlyTextSecondary,
+                fontSize = 11.sp
+            )
+        }
+
+        Text(
+            text = number,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = RoamlyPrimary
+        )
     }
 }

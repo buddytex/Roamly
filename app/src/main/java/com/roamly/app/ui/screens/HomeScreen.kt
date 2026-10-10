@@ -27,12 +27,16 @@ import androidx.compose.material.icons.filled.Luggage
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -41,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,7 +70,7 @@ fun HomeScreen(
 ) {
     val trips by repository.trips.collectAsState()
     val checklist by repository.checklist.collectAsState()
-    val currentTrip = trips.firstOrNull { it.id == "trip_singapore_2026" } ?: trips.firstOrNull()
+    val currentTrip = repository.getCurrentTrip() ?: trips.firstOrNull()
 
     val totalItems = checklist.size
     val packedItems = checklist.count { it.isPacked }
@@ -78,50 +81,33 @@ fun HomeScreen(
             .fillMaxSize()
             .background(RoamlyBackground)
             .padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            // Header: Roamly Logo & Calm Welcoming Greeting
+            // Header: Greeting & Demo Weather Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(RoamlyPrimary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = null,
-                                tint = RoamlySurface,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Roamly",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = RoamlyPrimary,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Good day, Alex & Maya 🌿",
+                        text = "Hello, Alex! 🌿",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary,
+                        fontSize = 24.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (currentTrip != null) "Welcome to your ${currentTrip.destination} trip." else "Welcome back to Roamly.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = RoamlyTextSecondary
                     )
                 }
 
-                // Weather indicator badge
+                // Weather indicator badge clearly labelled as demo data
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -129,26 +115,34 @@ fun HomeScreen(
                         .border(1.dp, RoamlyBorder, RoundedCornerShape(12.dp))
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.WbSunny,
-                            contentDescription = "Weather",
-                            tint = RoamlyAccent,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.WbSunny,
+                                contentDescription = "Weather",
+                                tint = RoamlyAccent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "31°C Sunny",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = RoamlyTextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         Text(
-                            text = "Singapore 31°C",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = RoamlyTextPrimary,
-                            fontWeight = FontWeight.SemiBold
+                            text = "Demo Weather",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = RoamlyTextSecondary,
+                            fontSize = 9.sp
                         )
                     }
                 }
             }
         }
 
-        // Hero Card: Current/Upcoming Trip
+        // MAIN TRIP CARD
         item {
             if (currentTrip != null) {
                 Card(
@@ -157,15 +151,14 @@ fun HomeScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, RoamlyBorder, RoundedCornerShape(20.dp))
-                        .clickable { onNavigateToTrips() }
+                        .border(1.5.dp, RoamlyBorder, RoundedCornerShape(20.dp))
                 ) {
                     Column {
                         // Visual Banner
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(130.dp)
+                                .height(125.dp)
                                 .background(
                                     Brush.horizontalGradient(
                                         listOf(
@@ -180,20 +173,52 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier.align(Alignment.BottomStart)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(RoamlySurface.copy(alpha = 0.25f))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "UPCOMING JOURNEY",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = RoamlySurface,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 1.sp
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(RoamlySurface.copy(alpha = 0.25f))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = currentTrip.status.displayName.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = RoamlySurface,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+
+                                    // Switch Trip Button
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(RoamlySurface.copy(alpha = 0.25f))
+                                            .clickable { onNavigateToTrips() }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.SwapHoriz,
+                                                contentDescription = "Switch Trip",
+                                                tint = RoamlySurface,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Switch Trip",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = RoamlySurface,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
+
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = currentTrip.title,
@@ -204,7 +229,7 @@ fun HomeScreen(
                             }
                         }
 
-                        // Trip Details & Quick Action
+                        // Trip Details & Primary Action
                         Column(modifier = Modifier.padding(18.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -235,7 +260,7 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "${currentTrip.travelerCount} travelers",
+                                        text = "${currentTrip.travelerCount} travellers",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = RoamlyTextSecondary
                                     )
@@ -251,38 +276,36 @@ fun HomeScreen(
                                 lineHeight = 20.sp
                             )
 
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                            Row(
+                            // Primary Action Button: "View My Travel Plan"
+                            Button(
+                                onClick = onNavigateToTrips,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(RoamlyPrimaryContainer)
-                                    .clickable { onNavigateToTrips() }
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Map,
-                                        contentDescription = null,
-                                        tint = RoamlyPrimary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Explore 5-Day Day-by-Day Itinerary",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = RoamlyPrimary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Map,
+                                    contentDescription = null,
+                                    tint = RoamlySurface,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "View My Travel Plan",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = RoamlySurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                     contentDescription = null,
-                                    tint = RoamlyPrimary,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = RoamlySurface,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
@@ -291,184 +314,169 @@ fun HomeScreen(
             }
         }
 
-        // Preparation Progress Card
+        // THREE CLEAR USEFUL ACTIONS
         item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
-                    .clickable { onNavigateToChecklists() }
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(RoamlyAccentContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Luggage,
-                                    contentDescription = null,
-                                    tint = RoamlyAccent,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Pre-Trip Packing & Belongings",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyTextPrimary
-                                )
-                                Text(
-                                    text = "$packedItems of $totalItems items packed",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = RoamlyTextSecondary
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "${(packProgress * 100).toInt()}%",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = RoamlyPrimary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    LinearProgressIndicator(
-                        progress = { packProgress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = RoamlyPrimary,
-                        trackColor = RoamlySurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "Tap to review items, travel documents, and belongings reminder.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = RoamlyTextSecondary
-                    )
-                }
-            }
+            Text(
+                text = "Quick Travel Actions",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = RoamlyTextPrimary
+            )
         }
 
-        // AI Companion Entry Point
         item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = RoamlySurfaceVariant),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+                // ACTION 1: What Should I Pack?
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                        .clickable { onNavigateToChecklists() },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = RoamlySurface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.Start
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(RoamlyPrimary),
+                                .background(RoamlyAccentContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Luggage,
+                                contentDescription = null,
+                                tint = RoamlyAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "What Should I Pack?",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlyTextPrimary,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "$packedItems/$totalItems packed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = RoamlyTextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                // ACTION 2: Ask for Travel Help
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                        .clickable { onNavigateToAi(null) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = RoamlySurface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(RoamlyPrimaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
-                                tint = RoamlySurface,
-                                modifier = Modifier.size(18.dp)
+                                tint = RoamlyPrimary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Roamly AI Travel Companion",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = RoamlyTextPrimary
-                            )
-                            Text(
-                                text = "Context-aware assistance for your Singapore trip",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = RoamlyTextSecondary
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Suggestion prompt chips
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val prompts = listOf(
-                            "What should I explore near Marina Bay?",
-                            "What can I do with three hours free?",
-                            "What should I pack for Singapore?"
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Ask Travel Help",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlyTextPrimary,
+                            fontSize = 14.sp
                         )
-                        prompts.forEach { prompt ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(RoamlySurface)
-                                    .border(1.dp, RoamlyBorder, RoundedCornerShape(10.dp))
-                                    .clickable { onNavigateToAi(prompt) }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = prompt,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = RoamlyTextPrimary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = null,
-                                        tint = RoamlyPrimary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Offline assistant",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = RoamlyTextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                // ACTION 3: Places to Visit
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                        .clickable { onNavigateToTrips() },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = RoamlySurface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(RoamlySurfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Places to Visit",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlyTextPrimary,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Daily schedule",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = RoamlyTextSecondary,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
         }
 
-        // Essential Travel Reminders Card
+        // TRAVEL REMINDERS
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = RoamlySurface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                    .border(1.dp, RoamlyBorder, RoundedCornerShape(18.dp))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Info,
@@ -478,41 +486,67 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Pre-Departure Notes",
+                            text = "Important Reminders",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = RoamlyTextPrimary
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.Top) {
-                            Text(text = "•", color = RoamlyPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 6.dp))
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Submit electronic SG Arrival Card (SGAC) within 3 days before landing at Changi.",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "Check your travel documents: Submit your electronic SG Arrival Card (SGAC) within 3 days before entry.",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary,
-                                lineHeight = 18.sp
+                                lineHeight = 20.sp
                             )
                         }
+
                         Row(verticalAlignment = Alignment.Top) {
-                            Text(text = "•", color = RoamlyPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 6.dp))
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Power sockets use Type-G UK 3-pin standard (230V); pack your adapter.",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "Review your packing list: Ensure UK 3-pin adapters and prescription medications are prepared.",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary,
-                                lineHeight = 18.sp
+                                lineHeight = 20.sp
                             )
                         }
+
                         Row(verticalAlignment = Alignment.Top) {
-                            Text(text = "•", color = RoamlyPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 6.dp))
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Singapore tap water is potable and safe to drink from faucets.",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "Check your belongings before leaving: Use Roamly's reminder at every stop so nothing is left behind.",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary,
-                                lineHeight = 18.sp
+                                lineHeight = 20.sp
                             )
                         }
                     }
@@ -521,7 +555,7 @@ fun HomeScreen(
         }
 
         item {
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

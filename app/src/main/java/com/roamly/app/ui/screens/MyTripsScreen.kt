@@ -20,15 +20,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Luggage
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,6 +41,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -61,6 +66,7 @@ import com.roamly.app.model.DestinationItem
 import com.roamly.app.model.Trip
 import com.roamly.app.model.TripStatus
 import com.roamly.app.ui.components.BelongingsReminderDialog
+import com.roamly.app.ui.components.PlanNewTripDialog
 import com.roamly.app.ui.theme.RoamlyAccent
 import com.roamly.app.ui.theme.RoamlyAccentContainer
 import com.roamly.app.ui.theme.RoamlyBackground
@@ -75,289 +81,687 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 
 @Composable
 fun MyTripsScreen(
-    repository: RoamlyRepository
+    repository: RoamlyRepository,
+    initialSelectedTripId: String? = null
 ) {
     val trips by repository.trips.collectAsState()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Upcoming, 1: Active, 2: Completed
-    val currentTrip = trips.firstOrNull { it.id == "trip_singapore_2026" } ?: trips.firstOrNull()
+    val activeTripId by repository.currentTripId.collectAsState()
+
+    // Screen state: if activeTripForItinerary is null, display Trip Selection Overview; otherwise show Daily Itinerary
+    var activeTripForItinerary by remember {
+        mutableStateOf(trips.find { it.id == (initialSelectedTripId ?: activeTripId) })
+    }
+    var showPlanTripDialog by remember { mutableStateOf(false) }
 
     // Departure reminder dialog state
     var showBelongingsDialogForDest by remember { mutableStateOf<DestinationItem?>(null) }
 
-    if (showBelongingsDialogForDest != null && currentTrip != null) {
+    if (showPlanTripDialog) {
+        PlanNewTripDialog(
+            onDismiss = { showPlanTripDialog = false },
+            onTripCreated = { newTrip ->
+                repository.addTrip(newTrip)
+                activeTripForItinerary = newTrip
+                showPlanTripDialog = false
+            },
+            onPlanWithAi = { dest ->
+                showPlanTripDialog = false
+            }
+        )
+    }
+
+    if (showBelongingsDialogForDest != null && activeTripForItinerary != null) {
         BelongingsReminderDialog(
             destinationName = showBelongingsDialogForDest!!.name,
             onDismiss = { showBelongingsDialogForDest = null },
             onConfirmed = {
-                repository.markDepartureReminderAcknowledged(currentTrip.id, showBelongingsDialogForDest!!.id)
-                repository.markDestinationVisited(currentTrip.id, showBelongingsDialogForDest!!.id, true)
+                repository.markDepartureReminderAcknowledged(activeTripForItinerary!!.id, showBelongingsDialogForDest!!.id)
+                repository.markDestinationVisited(activeTripForItinerary!!.id, showBelongingsDialogForDest!!.id, true)
                 showBelongingsDialogForDest = null
             }
         )
     }
+
+    if (activeTripForItinerary == null) {
+        // VIEW 1: Trip Selection Overview ("Where are you going?")
+        TripSelectionOverview(
+            trips = trips,
+            onSelectTrip = { trip ->
+                repository.selectTrip(trip.id)
+                activeTripForItinerary = trip
+            },
+            onPlanNewTrip = { showPlanTripDialog = true }
+        )
+    } else {
+        // VIEW 2: Daily Itinerary for selected trip
+        DailyItineraryView(
+            trip = activeTripForItinerary!!,
+            repository = repository,
+            onBackToTrips = { activeTripForItinerary = null },
+            onTriggerBelongingsReminder = { dest ->
+                showBelongingsDialogForDest = dest
+            }
+        )
+    }
+}
+
+@Composable
+private fun TripSelectionOverview(
+    trips: List<Trip>,
+    onSelectTrip: (Trip) -> Unit,
+    onPlanNewTrip: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RoamlyBackground)
+            .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Where are you going?",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary,
+                        fontSize = 28.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Choose a trip to continue or plan a new journey.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = RoamlyTextSecondary,
+                        lineHeight = 22.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Prominent "+ Plan a New Trip" Button
+            Button(
+                onClick = onPlanNewTrip,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = RoamlySurface,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "+ Plan a New Trip",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = RoamlySurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        if (trips.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(RoamlyBorder))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "You haven't added a trip yet.",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = RoamlyTextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onPlanNewTrip,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                        ) {
+                            Text("Plan My First Trip")
+                        }
+                    }
+                }
+            }
+        } else {
+            items(trips, key = { it.id }) { trip ->
+                TripCardItem(
+                    trip = trip,
+                    onOpenTrip = { onSelectTrip(trip) }
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun TripCardItem(
+    trip: Trip,
+    onOpenTrip: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, RoamlyBorder, RoundedCornerShape(18.dp))
+            .clickable(onClick = onOpenTrip)
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TripStatusBadge(status = trip.status)
+
+                if (trip.id == "trip_singapore_2026") {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(RoamlyPrimaryContainer)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "Sample Itinerary",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = RoamlyPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = trip.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = RoamlyTextPrimary,
+                fontSize = 20.sp
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = trip.destination,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = RoamlyPrimary
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = RoamlyTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (trip.dates.isNotBlank()) "${trip.dates} (${trip.durationDays} days)" else "${trip.durationDays} days",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = RoamlyTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${trip.travelerCount} travellers",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Button(
+                onClick = onOpenTrip,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+            ) {
+                Text(
+                    text = "Open Trip",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = RoamlySurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyItineraryView(
+    trip: Trip,
+    repository: RoamlyRepository,
+    onBackToTrips: () -> Unit,
+    onTriggerBelongingsReminder: (DestinationItem) -> Unit
+) {
+    // Collect trips from repository to get live updates
+    val trips by repository.trips.collectAsState()
+    val liveTrip = trips.find { it.id == trip.id } ?: trip
+
+    var selectedDayIndex by remember { mutableIntStateOf(0) }
+    val days = liveTrip.days
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(RoamlyBackground)
     ) {
-        // Top App Bar Header
+        // Top Header with Back to All Trips
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(RoamlySurface)
-                .padding(horizontal = 20.dp, vertical = 14.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .border(0.5.dp, RoamlyBorder)
         ) {
-            Text(
-                text = "My Journeys",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = RoamlyTextPrimary
-            )
-            Text(
-                text = "Track your itinerary, planned activities, and stops",
-                style = MaterialTheme.typography.bodySmall,
-                color = RoamlyTextSecondary
-            )
-        }
-
-        // Status Tabs (Upcoming, Active, Completed)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val tabs = listOf("Upcoming (1)", "Active (0)", "Completed (1)")
-            tabs.forEachIndexed { index, title ->
-                val isSelected = selectedTab == index
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) RoamlyPrimary else RoamlySurface)
-                        .border(1.dp, if (isSelected) RoamlyPrimary else RoamlyBorder, RoundedCornerShape(10.dp))
-                        .clickable { selectedTab = index }
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBackToTrips) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back to Trips",
+                        tint = RoamlyPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
                     Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) RoamlySurface else RoamlyTextSecondary
+                        text = liveTrip.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyTextPrimary
+                    )
+                    Text(
+                        text = "${liveTrip.dates} • ${liveTrip.durationDays} Days",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary
                     )
                 }
             }
         }
 
-        if (selectedTab == 2) {
-            // Completed Trips
-            val completedTrips = trips.filter { it.status == TripStatus.COMPLETED }
+        if (days.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "This trip doesn't have a daily plan yet.",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = RoamlyTextSecondary
+                )
+            }
+        } else {
+            // Day Selector Tabs
+            ScrollableTabRow(
+                selectedTabIndex = selectedDayIndex.coerceIn(0, days.size - 1),
+                containerColor = RoamlySurface,
+                contentColor = RoamlyPrimary,
+                edgePadding = 16.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                days.forEachIndexed { index, day ->
+                    val isSelected = selectedDayIndex == index
+                    Tab(
+                        selected = isSelected,
+                        onClick = { selectedDayIndex = index },
+                        text = {
+                            Text(
+                                text = "Day ${day.dayNumber}",
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 15.sp,
+                                color = if (isSelected) RoamlyPrimary else RoamlyTextSecondary
+                            )
+                        }
+                    )
+                }
+            }
+
+            val currentDay = days.getOrNull(selectedDayIndex) ?: days.first()
+            val totalDestinations = currentDay.destinations.size
+            val visitedDestinations = currentDay.destinations.count { it.isCompleted }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(completedTrips) { trip ->
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Day Title & Visited Progress
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = trip.title,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyTextPrimary
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(RoamlyPrimaryContainer)
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(
-                                        text = "COMPLETED",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = RoamlyPrimary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
+                        Column {
                             Text(
-                                text = "${trip.dates} • ${trip.destination}, ${trip.country}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = RoamlyTextSecondary
+                                text = currentDay.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = RoamlyTextPrimary
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = trip.summary,
+                                text = currentDay.date,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary
                             )
                         }
+
+                        // Progress Badge: "2 of 4 places visited today."
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(RoamlyPrimaryContainer)
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "$visitedDestinations of $totalDestinations places visited today",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = RoamlyPrimary
+                            )
+                        }
                     }
                 }
+
+                items(currentDay.destinations, key = { it.id }) { dest ->
+                    ActivityDestinationCard(
+                        destination = dest,
+                        onToggleVisited = { isDone ->
+                            repository.markDestinationVisited(liveTrip.id, dest.id, isDone)
+                        },
+                        onDepartLocation = {
+                            onTriggerBelongingsReminder(dest)
+                        }
+                    )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
             }
-        } else {
-            // Main 5-Day Singapore Itinerary (Upcoming / Active)
-            if (currentTrip != null) {
-                var selectedDayIndex by remember { mutableIntStateOf(0) }
-                val currentDay = currentTrip.days.getOrNull(selectedDayIndex) ?: currentTrip.days.firstOrNull()
+        }
+    }
+}
 
-                // Overall Progress Calculation
-                val allDestinations = currentTrip.days.flatMap { it.destinations }
-                val totalDests = allDestinations.size
-                val completedDests = allDestinations.count { it.isCompleted }
-                val tripProgress = if (totalDests > 0) completedDests.toFloat() / totalDests.toFloat() else 0f
+@Composable
+private fun ActivityDestinationCard(
+    destination: DestinationItem,
+    onToggleVisited: (Boolean) -> Unit,
+    onDepartLocation: () -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
 
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.5.dp,
+                if (destination.isCompleted) RoamlySuccess.copy(alpha = 0.5f) else RoamlyBorder,
+                RoundedCornerShape(18.dp)
+            )
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            // Header Row: Time slot, Category, and Visited Checkbox
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(RoamlyPrimaryContainer)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AccessTime,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${destination.timeSlot} • ${destination.duration}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = RoamlyPrimary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = destination.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary
+                    )
+                }
+
+                // Visited Checkbox with accessible label
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onToggleVisited(!destination.isCompleted) }
+                ) {
+                    Checkbox(
+                        checked = destination.isCompleted,
+                        onCheckedChange = { onToggleVisited(it) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = RoamlySuccess,
+                            uncheckedColor = RoamlyBorder
+                        )
+                    )
+                    Text(
+                        text = if (destination.isCompleted) "Visited" else "Mark visited",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (destination.isCompleted) FontWeight.Bold else FontWeight.Normal,
+                        color = if (destination.isCompleted) RoamlySuccess else RoamlyTextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Place Name
+            Text(
+                text = destination.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = RoamlyTextPrimary,
+                fontSize = 19.sp
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Short Description
+            Text(
+                text = destination.shortDescription,
+                style = MaterialTheme.typography.bodyMedium,
+                color = RoamlyTextSecondary,
+                lineHeight = 20.sp
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Actions Row: Expand Details & Belongings Departure Check
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Expand Details Button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { isExpanded = !isExpanded }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isExpanded) "Hide details" else "View details",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = RoamlyPrimary
+                    )
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = RoamlyPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Leaving / Belongings Reminder Button
+                OutlinedButton(
+                    onClick = onDepartLocation,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = RoamlyAccent),
+                    modifier = Modifier.height(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Luggage,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Departing Stop",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Expandable section with detailed tips and precautions
+            AnimatedVisibility(visible = isExpanded) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 20.dp)
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(RoamlySurfaceVariant.copy(alpha = 0.5f))
+                        .padding(14.dp)
                 ) {
-                    // Trip Progress Header Card
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = currentTrip.title,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = RoamlyTextPrimary
-                                    )
-                                    Text(
-                                        text = "${currentTrip.dates} • ${currentTrip.durationDays} Days",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = RoamlyTextSecondary
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(RoamlyPrimaryContainer)
-                                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = "$completedDests of $totalDests visited",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = RoamlyPrimary
-                                    )
-                                }
-                            }
+                    Text(
+                        text = destination.fullDescription,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = RoamlyTextPrimary,
+                        lineHeight = 20.sp
+                    )
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            LinearProgressIndicator(
-                                progress = { tripProgress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = RoamlyPrimary,
-                                trackColor = RoamlySurfaceVariant
+                    if (destination.practicalTips.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Lightbulb,
+                                contentDescription = null,
+                                tint = RoamlyAccent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Practical Tips",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = RoamlyTextPrimary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        destination.practicalTips.forEach { tip ->
+                            Text(
+                                text = "• $tip",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = RoamlyTextSecondary,
+                                modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Day Tabs
-                    ScrollableTabRow(
-                        selectedTabIndex = selectedDayIndex,
-                        containerColor = RoamlyBackground,
-                        contentColor = RoamlyPrimary,
-                        edgePadding = 0.dp,
-                        divider = {}
-                    ) {
-                        currentTrip.days.forEachIndexed { idx, day ->
-                            val isDaySelected = selectedDayIndex == idx
-                            Tab(
-                                selected = isDaySelected,
-                                onClick = { selectedDayIndex = idx },
-                                text = {
-                                    Text(
-                                        text = "Day ${day.dayNumber}",
-                                        fontWeight = if (isDaySelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isDaySelected) RoamlyPrimary else RoamlyTextSecondary
-                                    )
-                                }
+                    if (destination.precautions.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = RoamlyPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Accessibility & Advice",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = RoamlyTextPrimary
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    if (currentDay != null) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            item {
-                                // Day Theme Title
-                                Column {
-                                    Text(
-                                        text = currentDay.title,
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = RoamlyTextPrimary
-                                    )
-                                    Text(
-                                        text = currentDay.date,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = RoamlyTextSecondary
-                                    )
-                                }
-                            }
-
-                            items(currentDay.destinations) { destination ->
-                                DestinationCard(
-                                    destination = destination,
-                                    onToggleActivity = { actId ->
-                                        repository.toggleActivity(currentTrip.id, destination.id, actId)
-                                    },
-                                    onToggleCompleted = { completed ->
-                                        if (completed && !destination.departureReminderChecked) {
-                                            // Prompt belongings reminder before completing!
-                                            showBelongingsDialogForDest = destination
-                                        } else {
-                                            repository.markDestinationVisited(currentTrip.id, destination.id, completed)
-                                        }
-                                    },
-                                    onDeparting = {
-                                        showBelongingsDialogForDest = destination
-                                    }
-                                )
-                            }
-
-                            item {
-                                Spacer(modifier = Modifier.height(30.dp))
-                            }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        destination.precautions.forEach { precaution ->
+                            Text(
+                                text = "• $precaution",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = RoamlyTextSecondary,
+                                modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
+                            )
                         }
                     }
                 }
@@ -367,306 +771,25 @@ fun MyTripsScreen(
 }
 
 @Composable
-fun DestinationCard(
-    destination: DestinationItem,
-    onToggleActivity: (activityId: String) -> Unit,
-    onToggleCompleted: (Boolean) -> Unit,
-    onDeparting: () -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
+private fun TripStatusBadge(status: TripStatus) {
+    val (bgColor, textColor) = when (status) {
+        TripStatus.PLANNING -> Pair(RoamlySurfaceVariant, RoamlyTextSecondary)
+        TripStatus.UPCOMING -> Pair(RoamlyPrimaryContainer, RoamlyPrimary)
+        TripStatus.IN_PROGRESS -> Pair(RoamlyAccentContainer, RoamlyAccent)
+        TripStatus.COMPLETED -> Pair(RoamlySuccess.copy(alpha = 0.15f), RoamlySuccess)
+    }
 
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                1.dp,
-                if (destination.isCompleted) RoamlySuccess.copy(alpha = 0.4f) else RoamlyBorder,
-                RoundedCornerShape(16.dp)
-            )
+            .clip(RoundedCornerShape(8.dp))
+            .background(bgColor)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header Row: Time, Category & Status
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = null,
-                        tint = RoamlyTextSecondary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${destination.timeSlot} (${destination.duration})",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = RoamlyTextSecondary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(RoamlySurfaceVariant)
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = destination.category,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = RoamlyTextPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Title & Visited checkmark
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = destination.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (destination.isCompleted) RoamlySuccess else RoamlyTextPrimary,
-                    modifier = Modifier.weight(1f)
-                )
-
-                if (destination.isCompleted) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(RoamlySuccess.copy(alpha = 0.12f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Visited",
-                            tint = RoamlySuccess,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Visited",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = RoamlySuccess,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = destination.shortDescription,
-                style = MaterialTheme.typography.bodyMedium,
-                color = RoamlyTextSecondary,
-                lineHeight = 20.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Expand/Collapse Details Trigger
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (expanded) "Hide activities & tips" else "View activities & practical tips",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = RoamlyPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    tint = RoamlyPrimary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = destination.fullDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = RoamlyTextSecondary,
-                        lineHeight = 18.sp
-                    )
-
-                    // Activities Checklist
-                    if (destination.activities.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(RoamlySurfaceVariant)
-                                .padding(12.dp)
-                        ) {
-                            Text(
-                                text = "Planned Activities",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = RoamlyTextPrimary
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            destination.activities.forEach { act ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onToggleActivity(act.id) }
-                                        .padding(vertical = 3.dp)
-                                ) {
-                                    Checkbox(
-                                        checked = act.isDone,
-                                        onCheckedChange = { onToggleActivity(act.id) },
-                                        colors = CheckboxDefaults.colors(checkedColor = RoamlyPrimary)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = act.title,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (act.isDone) RoamlyPrimary else RoamlyTextPrimary,
-                                        fontWeight = if (act.isDone) FontWeight.SemiBold else FontWeight.Normal
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Practical Tips
-                    if (destination.practicalTips.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(RoamlyPrimaryContainer.copy(alpha = 0.5f))
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Lightbulb,
-                                    contentDescription = null,
-                                    tint = RoamlyPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Practical Instructions",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyPrimary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            destination.practicalTips.forEach { tip ->
-                                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 2.dp)) {
-                                    Text(text = "•", color = RoamlyPrimary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 6.dp))
-                                    Text(text = tip, style = MaterialTheme.typography.bodySmall, color = RoamlyTextPrimary)
-                                }
-                            }
-                        }
-                    }
-
-                    // Precautions
-                    if (destination.precautions.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(RoamlyAccentContainer.copy(alpha = 0.6f))
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = RoamlyAccent,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Local Precautions",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyTextPrimary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            destination.precautions.forEach { precaution ->
-                                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 2.dp)) {
-                                    Text(text = "•", color = RoamlyAccent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 6.dp))
-                                    Text(text = precaution, style = MaterialTheme.typography.bodySmall, color = RoamlyTextPrimary)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Departure & Completion Actions
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onDeparting,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Luggage,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = RoamlyPrimary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Depart Stop", color = RoamlyPrimary, style = MaterialTheme.typography.labelMedium)
-                        }
-
-                        Button(
-                            onClick = { onToggleCompleted(!destination.isCompleted) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (destination.isCompleted) RoamlySuccess else RoamlyPrimary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (destination.isCompleted) "Completed" else "Mark Visited",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        Text(
+            text = status.displayName,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
     }
 }

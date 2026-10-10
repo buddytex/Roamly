@@ -1,9 +1,15 @@
 package com.roamly.app.model
 
-enum class TripStatus {
-    ACTIVE,
-    UPCOMING,
-    COMPLETED
+enum class UserRole(val displayName: String) {
+    TRAVELLER("Traveller"),
+    GUIDE("Tour Guide")
+}
+
+enum class TripStatus(val displayName: String) {
+    PLANNING("Planning"),
+    UPCOMING("Upcoming"),
+    IN_PROGRESS("In Progress"),
+    COMPLETED("Completed")
 }
 
 enum class ChecklistCategory(val displayName: String) {
@@ -57,10 +63,14 @@ data class Trip(
     val dates: String,
     val durationDays: Int,
     val travelerCount: Int,
-    val travelers: List<String>,
+    val travelers: List<String> = emptyList(),
     val status: TripStatus,
     val summary: String,
-    val days: List<TripDay>
+    val days: List<TripDay> = emptyList(),
+    val meetingPoint: String = "Hotel Lobby / Airport Arrival",
+    val announcements: List<String> = emptyList(),
+    val maxGroupSize: Int = 10,
+    val isGuideManaged: Boolean = true
 )
 
 data class ChecklistItem(
@@ -84,4 +94,17 @@ data class DocumentGuide(
     val description: String,
     val officialSource: String,
     val officialUrl: String
+)
+
+data class TravellerRecord(
+    val id: String,
+    val name: String,
+    val assignedTripId: String,
+    val assignedTripName: String,
+    val preparationStatus: String, // "Ready", "Preparation Incomplete", "Documents Pending"
+    val packedItemsCount: Int,
+    val totalItemsCount: Int,
+    val visitedActivitiesCount: Int,
+    val totalActivitiesCount: Int,
+    val contactPhone: String = "+65 8123 4567"
 )
