@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.roamly.app.BuildConfig
+import com.roamly.app.auth.firebase.FirebaseAuthManager
 import com.roamly.app.auth.model.ApprovalStatus
 import com.roamly.app.auth.model.AuthResult
 import com.roamly.app.auth.model.AuthState
@@ -31,8 +32,11 @@ class SupabaseAuthRepository(
     customAnonKey: String? = null
 ) : AuthRepository {
 
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences("roamly_auth_session", Context.MODE_PRIVATE)
+        appContext.getSharedPreferences("roamly_auth_session", Context.MODE_PRIVATE)
+    private val roamlyPrefs: SharedPreferences =
+        appContext.getSharedPreferences("roamly_app_prefs", Context.MODE_PRIVATE)
     private val gson = Gson()
 
     private val supabaseUrl: String = customBaseUrl ?: BuildConfig.SUPABASE_URL
@@ -58,7 +62,61 @@ class SupabaseAuthRepository(
     private val _currentUser = MutableStateFlow<AuthUser?>(null)
     override val currentUser: StateFlow<AuthUser?> = _currentUser.asStateFlow()
 
+    private fun getSavedRole(): UserRole? {
+        val roleStr = roamlyPrefs.getString("key_selected_role", null)
+            ?: prefs.getString(KEY_USER_ROLE, null)
+        return if (roleStr != null) {
+            try { UserRole.valueOf(roleStr) } catch (e: Exception) { null }
+        } else null
+    }
+
+    private fun saveRole(role: UserRole) {
+        roamlyPrefs.edit().putString("key_selected_role", role.name).apply()
+        prefs.edit().putString(KEY_USER_ROLE, role.name).apply()
+    }
+
     override suspend fun restoreSession() = withContext(ioDispatcher) {
+        // 1. Check if Firebase Authentication has an active session
+        val firebaseUser = FirebaseAuthManager.getCurrentUser(appContext)
+        if (firebaseUser != null) {
+            val cachedUserJson = prefs.getString(KEY_CACHED_USER, null)
+            val cachedUser = try {
+                if (cachedUserJson != null) gson.fromJson(cachedUserJson, AuthUser::class.java) else null
+            } catch (e: Exception) {
+                null
+            }
+
+            val resolvedRole = cachedUser?.role ?: getSavedRole()
+            val authUser = AuthUser(
+                id = firebaseUser.uid,
+                email = firebaseUser.email ?: cachedUser?.email ?: "",
+                fullName = firebaseUser.displayName
+                    ?: cachedUser?.fullName
+                    ?: firebaseUser.email?.substringBefore("@")
+                    ?: "Explorer",
+                role = resolvedRole,
+                approvalStatus = cachedUser?.approvalStatus ?: ApprovalStatus.APPROVED,
+                photoUrl = firebaseUser.photoUrl?.toString() ?: cachedUser?.photoUrl,
+                isEmailConfirmed = firebaseUser.isEmailVerified || cachedUser?.isEmailConfirmed == true
+            )
+
+            _currentUser.value = authUser
+
+            when {
+                resolvedRole == null -> {
+                    _authState.value = AuthState.AwaitingRoleSelection(authUser)
+                }
+                resolvedRole == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.PENDING -> {
+                    _authState.value = AuthState.AwaitingGuideApproval(authUser)
+                }
+                else -> {
+                    _authState.value = AuthState.Authenticated(authUser)
+                }
+            }
+            return@withContext
+        }
+
+        // 2. Check cached email/password session
         val cachedToken = prefs.getString(KEY_ACCESS_TOKEN, null)
         val cachedUserJson = prefs.getString(KEY_CACHED_USER, null)
         val expiresAt = prefs.getLong(KEY_EXPIRES_AT, 0L)
@@ -81,7 +139,7 @@ class SupabaseAuthRepository(
             return@withContext
         }
 
-        // Check if token has expired and backend is configured
+        // Check token expiry
         val now = System.currentTimeMillis()
         if (now >= expiresAt && isBackendConfigured) {
             val refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)
@@ -98,14 +156,16 @@ class SupabaseAuthRepository(
                         return@withContext
                     }
                 } catch (e: Exception) {
-                    // Network issue, preserve cached user if not critically expired
+                    // Preserve cached user if temporary network issue
                 }
             }
         }
 
-        // Apply state based on role and approval status
         _currentUser.value = cachedUser
         when {
+            cachedUser.role == null -> {
+                _authState.value = AuthState.AwaitingRoleSelection(cachedUser)
+            }
             cachedUser.role == UserRole.GUIDE && cachedUser.approvalStatus == ApprovalStatus.PENDING -> {
                 _authState.value = AuthState.AwaitingGuideApproval(cachedUser)
             }
@@ -159,6 +219,7 @@ class SupabaseAuthRepository(
             val authUser = mapDtoToAuthUser(userDto, profile, intendedRole)
 
             saveSession(authBody, authUser)
+            saveRole(intendedRole)
             _currentUser.value = authUser
 
             // Route based on role & approval
@@ -236,6 +297,7 @@ class SupabaseAuthRepository(
             if (authBody.accessToken != null) {
                 saveSession(authBody, authUser)
             }
+            saveRole(role)
             _currentUser.value = authUser
 
             when {
@@ -260,62 +322,87 @@ class SupabaseAuthRepository(
 
     override suspend fun signInWithGoogle(
         idToken: String,
-        intendedRole: UserRole
+        intendedRole: UserRole?
     ): AuthResult<AuthUser> = withContext(ioDispatcher) {
-        if (!isBackendConfigured) {
-            return@withContext AuthResult.Failure(
-                "Supabase backend is not configured yet. Please configure SUPABASE_URL and SUPABASE_ANON_KEY in gradle.properties.",
-                isRecoverable = false
-            )
-        }
-
         _authState.value = AuthState.SigningIn
 
-        try {
-            val response = networkClient.authApi.signInWithIdToken(
-                IdTokenLoginRequest(
-                    provider = "google",
-                    idToken = idToken,
-                    clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.ifBlank { null }
-                )
-            )
+        // 1. Verify Google ID token via Firebase Authentication
+        val firebaseResult = FirebaseAuthManager.verifyGoogleIdToken(appContext, idToken)
+        if (firebaseResult.isFailure) {
+            val errorMsg = firebaseResult.exceptionOrNull()?.message
+                ?: "Google sign-in could not be completed. Please try again."
+            _authState.value = AuthState.Error(errorMsg)
+            return@withContext AuthResult.Failure(errorMsg)
+        }
 
-            if (!response.isSuccessful || response.body() == null) {
-                val errorMsg = networkClient.parseErrorMessage(response)
-                _authState.value = AuthState.Error(errorMsg)
-                return@withContext AuthResult.Failure(errorMsg)
+        val firebaseUser = firebaseResult.getOrThrow()
+
+        // 2. Resolve Role
+        val resolvedRole = intendedRole ?: getSavedRole()
+        val initialApproval = if (resolvedRole == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
+
+        val authUser = AuthUser(
+            id = firebaseUser.uid,
+            email = firebaseUser.email ?: "",
+            fullName = firebaseUser.displayName
+                ?: firebaseUser.email?.substringBefore("@")
+                ?: "Explorer",
+            role = resolvedRole,
+            approvalStatus = initialApproval,
+            phone = firebaseUser.phoneNumber,
+            photoUrl = firebaseUser.photoUrl?.toString(),
+            isEmailConfirmed = firebaseUser.isEmailVerified
+        )
+
+        // 3. Cache session in SharedPreferences (safe user metadata, no raw passwords/tokens)
+        prefs.edit()
+            .putString(KEY_CACHED_USER, gson.toJson(authUser))
+            .apply()
+
+        if (resolvedRole != null) {
+            saveRole(resolvedRole)
+        }
+
+        _currentUser.value = authUser
+
+        // 4. Navigate to appropriate state
+        when {
+            resolvedRole == null -> {
+                _authState.value = AuthState.AwaitingRoleSelection(authUser)
             }
-
-            val authBody = response.body()!!
-            val userDto = authBody.user
-            val userId = userDto?.id ?: ""
-
-            val profile = fetchProfileSafely(userId)
-            val authUser = mapDtoToAuthUser(userDto, profile, intendedRole)
-
-            saveSession(authBody, authUser)
-            _currentUser.value = authUser
-
-            when {
-                authUser.role == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.PENDING -> {
-                    _authState.value = AuthState.AwaitingGuideApproval(authUser)
-                }
-                authUser.role == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.REJECTED -> {
-                    clearSession()
-                    val msg = "Your Guide access request was not approved."
-                    _authState.value = AuthState.Error(msg, isRecoverable = false)
-                    return@withContext AuthResult.Failure(msg)
-                }
-                else -> {
-                    _authState.value = AuthState.Authenticated(authUser)
-                }
+            resolvedRole == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.PENDING -> {
+                _authState.value = AuthState.AwaitingGuideApproval(authUser)
             }
+            else -> {
+                _authState.value = AuthState.Authenticated(authUser)
+            }
+        }
 
-            AuthResult.Success(authUser)
-        } catch (e: Exception) {
-            val message = e.localizedMessage ?: "Google sign-in failed. Please try again."
-            _authState.value = AuthState.Error(message)
-            AuthResult.Failure(message)
+        AuthResult.Success(authUser)
+    }
+
+    override fun assignUserRole(role: UserRole) {
+        val user = _currentUser.value
+        val approval = if (role == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
+        val updated = user?.copy(role = role, approvalStatus = approval) ?: AuthUser(
+            id = "google-user",
+            email = "",
+            fullName = "Explorer",
+            role = role,
+            approvalStatus = approval
+        )
+
+        saveRole(role)
+        prefs.edit().putString(KEY_CACHED_USER, gson.toJson(updated)).apply()
+        _currentUser.value = updated
+
+        when {
+            role == UserRole.GUIDE && updated.approvalStatus == ApprovalStatus.PENDING -> {
+                _authState.value = AuthState.AwaitingGuideApproval(updated)
+            }
+            else -> {
+                _authState.value = AuthState.Authenticated(updated)
+            }
         }
     }
 
@@ -329,10 +416,8 @@ class SupabaseAuthRepository(
 
         try {
             val response = networkClient.authApi.recoverPassword(RecoverRequest(email.trim()))
-            // Regardless of whether account exists, return success to prevent email enumeration
             AuthResult.Success(Unit)
         } catch (e: Exception) {
-            // Return failure only on raw connection drop
             AuthResult.Failure("Network error. Please verify your connection.")
         }
     }
@@ -340,6 +425,7 @@ class SupabaseAuthRepository(
     override suspend fun signOut() = withContext(ioDispatcher) {
         _authState.value = AuthState.SigningOut
         try {
+            FirebaseAuthManager.signOut(appContext)
             if (isBackendConfigured) {
                 networkClient.authApi.logout()
             }
@@ -355,7 +441,11 @@ class SupabaseAuthRepository(
     override fun clearError() {
         if (_authState.value is AuthState.Error) {
             val user = _currentUser.value
-            _authState.value = if (user != null) AuthState.Authenticated(user) else AuthState.SignedOut
+            _authState.value = if (user != null) {
+                if (user.role == null) AuthState.AwaitingRoleSelection(user) else AuthState.Authenticated(user)
+            } else {
+                AuthState.SignedOut
+            }
         }
     }
 
@@ -436,6 +526,7 @@ class SupabaseAuthRepository(
         private const val KEY_REFRESH_TOKEN = "key_refresh_token"
         private const val KEY_EXPIRES_AT = "key_expires_at"
         private const val KEY_CACHED_USER = "key_cached_user"
+        private const val KEY_USER_ROLE = "key_user_role"
 
         @Volatile
         private var instance: SupabaseAuthRepository? = null

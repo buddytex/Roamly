@@ -144,25 +144,42 @@ class AuthViewModel(
         }
     }
 
-    fun signInWithGoogle(context: Context, role: UserRole) {
+    private var isGoogleSignInRunning = false
+
+    fun signInWithGoogle(context: Context, role: UserRole? = null) {
+        if (isGoogleSignInRunning) return
+        isGoogleSignInRunning = true
         _formErrors.value = AuthFormErrors()
+
         viewModelScope.launch {
-            val helper = GoogleSignInHelper(context)
-            when (val googleResult = helper.signInWithGoogle()) {
-                is GoogleSignInResult.Success -> {
-                    val authResult = authRepository.signInWithGoogle(googleResult.idToken, role)
-                    if (authResult is AuthResult.Failure) {
-                        _formErrors.value = AuthFormErrors(generalError = authResult.message)
+            try {
+                val helper = GoogleSignInHelper(context)
+                when (val googleResult = helper.signInWithGoogle()) {
+                    is GoogleSignInResult.Success -> {
+                        val authResult = authRepository.signInWithGoogle(googleResult.idToken, role)
+                        if (authResult is AuthResult.Failure) {
+                            _formErrors.value = AuthFormErrors(generalError = authResult.message)
+                        } else if (role != null) {
+                            _selectedPortal.value = role
+                        }
+                    }
+                    is GoogleSignInResult.Cancelled -> {
+                        // User dismissed the bottom sheet, stop loading without loud error
+                    }
+                    is GoogleSignInResult.Error -> {
+                        _formErrors.value = AuthFormErrors(generalError = googleResult.message)
                     }
                 }
-                is GoogleSignInResult.Cancelled -> {
-                    // User dismissed the bottom sheet, no loud error
-                }
-                is GoogleSignInResult.Error -> {
-                    _formErrors.value = AuthFormErrors(generalError = googleResult.message)
-                }
+            } finally {
+                isGoogleSignInRunning = false
             }
         }
+    }
+
+    fun assignUserRole(role: UserRole) {
+        _selectedPortal.value = role
+        authRepository.assignUserRole(role)
+        clearErrors()
     }
 
     fun sendPasswordReset(email: String) {

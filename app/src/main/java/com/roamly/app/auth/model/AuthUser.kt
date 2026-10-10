@@ -12,9 +12,10 @@ data class AuthUser(
     val id: String,
     val email: String,
     val fullName: String,
-    val role: UserRole,
+    val role: UserRole? = null,
     val approvalStatus: ApprovalStatus = ApprovalStatus.APPROVED,
     val phone: String? = null,
+    val photoUrl: String? = null,
     val isEmailConfirmed: Boolean = true
 )
 
@@ -23,6 +24,7 @@ sealed class AuthState {
     object SignedOut : AuthState()
     object SigningIn : AuthState()
     object SigningUp : AuthState()
+    data class AwaitingRoleSelection(val user: AuthUser) : AuthState()
     data class AwaitingEmailVerification(val email: String) : AuthState()
     data class AwaitingGuideApproval(val user: AuthUser) : AuthState()
     data class Authenticated(val user: AuthUser) : AuthState()

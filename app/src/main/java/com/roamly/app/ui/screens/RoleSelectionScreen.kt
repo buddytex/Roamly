@@ -47,6 +47,9 @@ import com.roamly.app.ui.theme.RoamlyBackground
 import com.roamly.app.ui.theme.RoamlyBorder
 import com.roamly.app.ui.theme.RoamlyPrimary
 import com.roamly.app.ui.theme.RoamlyPrimaryContainer
+import androidx.compose.material3.HorizontalDivider
+import com.roamly.app.ui.components.AuthErrorBanner
+import com.roamly.app.ui.components.GoogleSignInButton
 import com.roamly.app.ui.theme.RoamlySurface
 import com.roamly.app.ui.theme.RoamlySurfaceVariant
 import com.roamly.app.ui.theme.RoamlyTextPrimary
@@ -54,7 +57,10 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 
 @Composable
 fun RoleSelectionScreen(
-    onRoleSelected: (UserRole) -> Unit
+    onRoleSelected: (UserRole) -> Unit,
+    onGoogleSignIn: (() -> Unit)? = null,
+    isLoading: Boolean = false,
+    errorMessage: String? = null
 ) {
     val scrollState = rememberScrollState()
 
@@ -133,7 +139,34 @@ fun RoleSelectionScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        if (errorMessage != null) {
+            AuthErrorBanner(message = errorMessage)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        if (onGoogleSignIn != null) {
+            GoogleSignInButton(
+                onClick = onGoogleSignIn,
+                isLoading = isLoading
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                HorizontalDivider(modifier = Modifier.weight(1f), color = RoamlyBorder)
+                Text(
+                    text = "OR CHOOSE ROLE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = RoamlyTextSecondary,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                HorizontalDivider(modifier = Modifier.weight(1f), color = RoamlyBorder)
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+        }
 
         // Card 1: TRAVELLER
         Card(

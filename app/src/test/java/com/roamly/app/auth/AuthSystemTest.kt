@@ -100,8 +100,44 @@ class FakeAuthRepository : AuthRepository {
         return AuthResult.Success(user)
     }
 
-    override suspend fun signInWithGoogle(idToken: String, intendedRole: UserRole): AuthResult<AuthUser> {
-        return signInWithEmail("google@test.com", "", intendedRole)
+    override suspend fun signInWithGoogle(idToken: String, intendedRole: UserRole?): AuthResult<AuthUser> {
+        if (shouldFailSignIn) {
+            _authState.value = AuthState.Error(signInErrorMessage)
+            return AuthResult.Failure(signInErrorMessage)
+        }
+        val user = AuthUser(
+            id = "google-user-id",
+            email = "google@test.com",
+            fullName = "Google User",
+            role = intendedRole,
+            approvalStatus = if (intendedRole == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED,
+            photoUrl = "https://example.com/photo.jpg"
+        )
+        _currentUser.value = user
+        _authState.value = when {
+            intendedRole == null -> AuthState.AwaitingRoleSelection(user)
+            intendedRole == UserRole.GUIDE -> AuthState.AwaitingGuideApproval(user)
+            else -> AuthState.Authenticated(user)
+        }
+        return AuthResult.Success(user)
+    }
+
+    override fun assignUserRole(role: UserRole) {
+        val user = _currentUser.value
+        val approval = if (role == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
+        val updated = user?.copy(role = role, approvalStatus = approval) ?: AuthUser(
+            id = "test-id",
+            email = "user@test.com",
+            fullName = "User",
+            role = role,
+            approvalStatus = approval
+        )
+        _currentUser.value = updated
+        _authState.value = if (role == UserRole.GUIDE && approval == ApprovalStatus.PENDING) {
+            AuthState.AwaitingGuideApproval(updated)
+        } else {
+            AuthState.Authenticated(updated)
+        }
     }
 
     override suspend fun sendPasswordResetEmail(email: String): AuthResult<Unit> {
@@ -251,6 +287,43 @@ class AuthSystemTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.passwordResetSent.value)
+    }
+
+    @Test
+    fun testGoogleSignInWithoutRolePromptsRoleSelection() = runTest {
+        val result = fakeRepository.signInWithGoogle("valid-token", null)
+        assertTrue(result is AuthResult.Success)
+
+        val state = fakeRepository.authState.value
+        assertTrue("Must prompt role selection if no role selected", state is AuthState.AwaitingRoleSelection)
+        val user = (state as AuthState.AwaitingRoleSelection).user
+        assertEquals("google@test.com", user.email)
+        assertNull(user.role)
+    }
+
+    @Test
+    fun testAssignRoleAfterGoogleSignInAuthenticatesUser() = runTest {
+        fakeRepository.signInWithGoogle("valid-token", null)
+        assertTrue(fakeRepository.authState.value is AuthState.AwaitingRoleSelection)
+
+        viewModel.assignUserRole(UserRole.TRAVELLER)
+        advanceUntilIdle()
+
+        val state = fakeRepository.authState.value
+        assertTrue("Must be Authenticated after role assigned", state is AuthState.Authenticated)
+        val user = (state as AuthState.Authenticated).user
+        assertEquals(UserRole.TRAVELLER, user.role)
+        assertEquals(ApprovalStatus.APPROVED, user.approvalStatus)
+    }
+
+    @Test
+    fun testGoogleSignInWithRoleAuthenticatesDirectly() = runTest {
+        val result = fakeRepository.signInWithGoogle("valid-token", UserRole.TRAVELLER)
+        assertTrue(result is AuthResult.Success)
+
+        val state = fakeRepository.authState.value
+        assertTrue("Direct Traveller auth", state is AuthState.Authenticated)
+        assertEquals(UserRole.TRAVELLER, (state as AuthState.Authenticated).user.role)
     }
 
     @Test

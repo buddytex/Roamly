@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.roamly.app.data.RoamlyRepository
@@ -108,8 +109,10 @@ fun RoamlyMainApp(
     repository: RoamlyRepository,
     authViewModel: AuthViewModel
 ) {
+    val context = LocalContext.current
     val authState by authViewModel.authState.collectAsState()
     val selectedPortal by authViewModel.selectedPortal.collectAsState()
+    val formErrors by authViewModel.formErrors.collectAsState()
 
     var travellerAuthStep by remember { mutableStateOf(AuthScreenStep.SIGN_IN) }
     var guideAuthStep by remember { mutableStateOf(AuthScreenStep.SIGN_IN) }
@@ -127,6 +130,14 @@ fun RoamlyMainApp(
                     strokeWidth = 3.dp
                 )
             }
+        }
+
+        is AuthState.AwaitingRoleSelection -> {
+            RoleSelectionScreen(
+                onRoleSelected = { role ->
+                    authViewModel.assignUserRole(role)
+                }
+            )
         }
 
         is AuthState.AwaitingEmailVerification -> {
@@ -178,7 +189,12 @@ fun RoamlyMainApp(
                             authViewModel.selectPortal(role)
                             travellerAuthStep = AuthScreenStep.SIGN_IN
                             guideAuthStep = AuthScreenStep.SIGN_IN
-                        }
+                        },
+                        onGoogleSignIn = {
+                            authViewModel.signInWithGoogle(context, null)
+                        },
+                        isLoading = authState is AuthState.SigningIn,
+                        errorMessage = formErrors.generalError ?: if (authState is AuthState.Error) (authState as AuthState.Error).message else null
                     )
                 }
 

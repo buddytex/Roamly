@@ -13,8 +13,9 @@ interface AuthRepository {
     suspend fun restoreSession()
     suspend fun signInWithEmail(email: String, password: String, intendedRole: UserRole): AuthResult<AuthUser>
     suspend fun signUpWithEmail(fullName: String, email: String, password: String, role: UserRole): AuthResult<AuthUser>
-    suspend fun signInWithGoogle(idToken: String, intendedRole: UserRole): AuthResult<AuthUser>
+    suspend fun signInWithGoogle(idToken: String, intendedRole: UserRole? = null): AuthResult<AuthUser>
     suspend fun sendPasswordResetEmail(email: String): AuthResult<Unit>
     suspend fun signOut()
     fun clearError()
+    fun assignUserRole(role: UserRole)
 }
