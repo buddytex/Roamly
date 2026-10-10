@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.railguard.mobile"
+    namespace = "com.roamly.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.railguard.mobile"
+        applicationId = "com.roamly.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -52,24 +52,13 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    //CameraX
-    implementation("androidx.camera:camera-core:1.6.1")
-    implementation("androidx.camera:camera-camera2:1.6.1")
-    implementation("androidx.camera:camera-lifecycle:1.6.1")
-    implementation("androidx.camera:camera-view:1.6.1")
 
-    // USB Serial
-    implementation(libs.usb.serial)
-
-    // ONNX Runtime for Android
-    implementation(libs.onnxruntime.android)
-
-    // Networking
+    // Networking & Serialization
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.gson)
-    // Play Services Location (Fused Location Provider)
+    // Play Services Location
     implementation("com.google.android.gms:play-services-location:21.3.0")
 }
