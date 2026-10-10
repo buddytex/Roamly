@@ -53,11 +53,16 @@ import com.roamly.app.ui.theme.RoamlySurface
 import com.roamly.app.ui.theme.RoamlyTextPrimary
 import com.roamly.app.ui.theme.RoamlyTextSecondary
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.statusBarsPadding
+
 @Composable
 fun TravellerForgotPasswordScreen(
     authViewModel: AuthViewModel,
     onBackToSignIn: () -> Unit
 ) {
+    BackHandler(onBack = onBackToSignIn)
+
     val formErrors by authViewModel.formErrors.collectAsState()
     val isResetSent by authViewModel.passwordResetSent.collectAsState()
 
@@ -69,8 +74,9 @@ fun TravellerForgotPasswordScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(RoamlyBackground)
+            .statusBarsPadding()
             .verticalScroll(scrollState)
-            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
         // Back Navigation
         Row(

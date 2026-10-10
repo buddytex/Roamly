@@ -63,12 +63,17 @@ import com.roamly.app.ui.theme.RoamlySurface
 import com.roamly.app.ui.theme.RoamlyTextPrimary
 import com.roamly.app.ui.theme.RoamlyTextSecondary
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.statusBarsPadding
+
 @Composable
 fun GuideSignUpScreen(
     authViewModel: AuthViewModel,
     onNavigateToSignIn: () -> Unit,
     onBackToRoleSelection: () -> Unit
 ) {
+    BackHandler(onBack = onBackToRoleSelection)
+
     val context = LocalContext.current
     val authState by authViewModel.authState.collectAsState()
     val formErrors by authViewModel.formErrors.collectAsState()
@@ -85,8 +90,9 @@ fun GuideSignUpScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(RoamlyBackground)
+            .statusBarsPadding()
             .verticalScroll(scrollState)
-            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
         // Back Navigation
         Row(
