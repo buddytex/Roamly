@@ -20,19 +20,30 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val supabaseUrl = (project.findProperty("SUPABASE_URL") as? String)
-            ?: System.getenv("SUPABASE_URL")
-            ?: "https://your-project.supabase.co"
-        val supabaseAnonKey = (project.findProperty("SUPABASE_ANON_KEY") as? String)
-            ?: System.getenv("SUPABASE_ANON_KEY")
-            ?: "your-anon-key"
-        val googleWebClientId = (project.findProperty("GOOGLE_WEB_CLIENT_ID") as? String)
-            ?: System.getenv("GOOGLE_WEB_CLIENT_ID")
+        val rawSupabaseUrl = (project.findProperty("SUPABASE_URL") as? String)?.trim()
+            ?: System.getenv("SUPABASE_URL")?.trim()
+            ?: ""
+        val rawSupabaseAnonKey = (project.findProperty("SUPABASE_ANON_KEY") as? String)?.trim()
+            ?: System.getenv("SUPABASE_ANON_KEY")?.trim()
+            ?: ""
+        val googleWebClientId = (project.findProperty("GOOGLE_WEB_CLIENT_ID") as? String)?.trim()
+            ?: System.getenv("GOOGLE_WEB_CLIENT_ID")?.trim()
             ?: ""
 
-        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+        if (rawSupabaseUrl.isEmpty() || rawSupabaseAnonKey.isEmpty()) {
+            logger.warn(
+                "[Roamly Warning] SUPABASE_URL or SUPABASE_ANON_KEY is missing/empty in gradle.properties or environment. " +
+                "Supabase backend authentication will remain unconfigured until valid project credentials are provided."
+            )
+        }
+
+        fun escapeStringForBuildConfig(value: String): String {
+            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        }
+
+        buildConfigField("String", "SUPABASE_URL", escapeStringForBuildConfig(rawSupabaseUrl))
+        buildConfigField("String", "SUPABASE_ANON_KEY", escapeStringForBuildConfig(rawSupabaseAnonKey))
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", escapeStringForBuildConfig(googleWebClientId))
     }
 
     buildTypes {
