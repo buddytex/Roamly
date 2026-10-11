@@ -31,6 +31,9 @@ class RoamlyRepository private constructor(context: Context) {
     private val _trips = MutableStateFlow<List<Trip>>(emptyList())
     val trips: StateFlow<List<Trip>> = _trips.asStateFlow()
 
+    private val _selectedTripIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedTripIds: StateFlow<Set<String>> = _selectedTripIds.asStateFlow()
+
     private val _currentTripId = MutableStateFlow<String>("trip_singapore_2026")
     val currentTripId: StateFlow<String> = _currentTripId.asStateFlow()
 
@@ -62,6 +65,14 @@ class RoamlyRepository private constructor(context: Context) {
         _selectedRole.value = if (savedRole != null) {
             try { UserRole.valueOf(savedRole) } catch (e: Exception) { null }
         } else null
+
+        // Load Selected Trip IDs for Traveller
+        try {
+            val savedSelected = prefs.getStringSet(KEY_SELECTED_TRIP_IDS, null)
+            _selectedTripIds.value = savedSelected?.toSet() ?: emptySet()
+        } catch (e: Exception) {
+            _selectedTripIds.value = emptySet()
+        }
 
         // Load Trips with safe error handling
         try {
@@ -197,11 +208,28 @@ class RoamlyRepository private constructor(context: Context) {
         _currentTripId.value = tripId
     }
 
+    fun isTripSelected(tripId: String): Boolean {
+        return _selectedTripIds.value.contains(tripId)
+    }
+
+    fun addTripToMyTrips(tripId: String) {
+        val updated = _selectedTripIds.value + tripId
+        _selectedTripIds.value = updated
+        prefs.edit().putStringSet(KEY_SELECTED_TRIP_IDS, updated).apply()
+    }
+
+    fun removeTripFromMyTrips(tripId: String) {
+        val updated = _selectedTripIds.value - tripId
+        _selectedTripIds.value = updated
+        prefs.edit().putStringSet(KEY_SELECTED_TRIP_IDS, updated).apply()
+    }
+
     fun addTrip(trip: Trip) {
-        val updated = listOf(trip) + _trips.value
+        val updated = listOf(trip) + _trips.value.filterNot { it.id == trip.id }
         _trips.value = updated
         _currentTripId.value = trip.id
         saveTrips(updated)
+        addTripToMyTrips(trip.id)
     }
 
     fun updateTripStatus(tripId: String, newStatus: TripStatus) {
@@ -218,6 +246,91 @@ class RoamlyRepository private constructor(context: Context) {
         }
         _trips.value = updated
         saveTrips(updated)
+    }
+
+    /**
+     * Guide-scoped helpers.
+     *
+     * Ownership model (local cache, mirrors Supabase trips.created_by + trip_members):
+     * - If [guideId] is null, return legacy guide-managed demo trips (guideId == null).
+     * - Otherwise return trips owned by that guide OR legacy demo trips without an owner,
+     *   so demo guides keep seeing the Singapore demo roster. Trips owned by a
+     *   different guide are never returned.
+     */
+    fun getGuideTrips(guideId: String?): List<Trip> {
+        return _trips.value.filter { trip ->
+            if (!trip.isGuideManaged) return@filter false
+            if (trip.guideId == null) {
+                // Legacy demo data: visible when no ownership is set, or to demo guides.
+                guideId == null || guideId.startsWith("demo_user") || trip.id == "trip_singapore_2026"
+            } else {
+                trip.guideId == guideId
+            }
+        }
+    }
+
+    fun getTripById(tripId: String): Trip? {
+        return _trips.value.find { it.id == tripId }
+    }
+
+    fun getTravellersForTripIds(tripIds: Set<String>): List<TravellerRecord> {
+        if (tripIds.isEmpty()) return emptyList()
+        return _travellers.value.filter { it.assignedTripId in tripIds }
+    }
+
+    data class TripDetailsUpdate(
+        val title: String,
+        val destination: String,
+        val country: String,
+        val dates: String,
+        val durationDays: Int,
+        val summary: String,
+        val meetingPoint: String,
+        val maxGroupSize: Int,
+        val travelerCount: Int,
+        val status: TripStatus
+    )
+
+    /** Returns false when the trip no longer exists. */
+    fun updateTripDetails(tripId: String, update: TripDetailsUpdate): Boolean {
+        var found = false
+        val updated = _trips.value.map { trip ->
+            if (trip.id == tripId) {
+                found = true
+                trip.copy(
+                    title = update.title.trim(),
+                    destination = update.destination.trim(),
+                    country = update.country.trim().ifBlank { update.destination.trim() },
+                    dates = update.dates.trim(),
+                    durationDays = update.durationDays,
+                    summary = update.summary.trim(),
+                    meetingPoint = update.meetingPoint.trim().ifBlank { trip.meetingPoint },
+                    maxGroupSize = update.maxGroupSize,
+                    travelerCount = update.travelerCount,
+                    status = update.status
+                )
+            } else trip
+        }
+        if (!found) return false
+        _trips.value = updated
+        saveTrips(updated)
+        return true
+    }
+
+    /** Returns false when the trip no longer exists. */
+    fun deleteTrip(tripId: String): Boolean {
+        val existing = _trips.value.any { it.id == tripId }
+        if (!existing) return false
+        // Protect the canonical demo itinerary from accidental deletion.
+        if (tripId == "trip_singapore_2026" || tripId == "trip_tinkerspace_demo") return false
+        val updated = _trips.value.filterNot { it.id == tripId }
+        _trips.value = updated
+        saveTrips(updated)
+        removeTripFromMyTrips(tripId)
+        if (_currentTripId.value == tripId) {
+            _currentTripId.value = "trip_singapore_2026"
+        }
+        return true
     }
 
     fun addTripAnnouncement(tripId: String, announcement: String) {
@@ -357,6 +470,8 @@ class RoamlyRepository private constructor(context: Context) {
         _chatMessages.value = createInitialChat()
         saveChat(_chatMessages.value)
         _currentTripId.value = "trip_singapore_2026"
+        _selectedTripIds.value = emptySet()
+        prefs.edit().remove(KEY_SELECTED_TRIP_IDS).apply()
         _selectedRole.value = null
         prefs.edit().remove(KEY_ROLE).apply()
         resetTinkerspaceDemo()
@@ -478,6 +593,7 @@ class RoamlyRepository private constructor(context: Context) {
         private const val KEY_CHECKLIST = "key_checklist"
         private const val KEY_CHAT = "key_chat"
         private const val KEY_TRAVELLERS = "key_travellers"
+        private const val KEY_SELECTED_TRIP_IDS = "key_selected_trip_ids"
         private const val KEY_TINKERSPACE_WORKFLOW_STATE = "key_tinkerspace_workflow_state"
         private const val KEY_TINKERSPACE_IS_SIMULATED = "key_tinkerspace_is_simulated"
         private const val KEY_TINKERSPACE_BELONGINGS_TIME = "key_tinkerspace_belongings_time"

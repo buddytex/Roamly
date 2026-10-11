@@ -80,7 +80,10 @@ data class Trip(
     val meetingPoint: String = "Hotel Lobby / Airport Arrival",
     val announcements: List<String> = emptyList(),
     val maxGroupSize: Int = 10,
-    val isGuideManaged: Boolean = true
+    val isGuideManaged: Boolean = true,
+    // Owner/creator guide identity. Null = legacy demo data visible to demo guides.
+    // Maps to Supabase trips.created_by / trip_members lead_guide relationship.
+    val guideId: String? = null
 )
 
 data class ChecklistItem(

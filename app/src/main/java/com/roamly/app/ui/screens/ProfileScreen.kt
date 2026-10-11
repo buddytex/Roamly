@@ -171,7 +171,8 @@ fun ProfileScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = currentUser?.fullName ?: if (isGuide) "Alex Chen (Guide)" else "Alex & Maya",
+                                text = currentUser?.fullName?.takeIf { it.isNotBlank() }
+                                    ?: if (isGuide) "Tour Guide" else "Traveller",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = RoamlyTextPrimary

@@ -20,36 +20,75 @@ import kotlinx.coroutines.flow.asStateFlow
 data class TinkerspaceLocationInfo(
     val hasPermission: Boolean = false,
     val isMonitoring: Boolean = false,
+
     val lastLatitude: Double? = null,
     val lastLongitude: Double? = null,
+
     val accuracyMeters: Float? = null,
+
     val distanceToOutdoorMeters: Float? = null,
     val distanceToIndoorMeters: Float? = null,
+
+    val lastFixTimeMillis: Long? = null,
+
+    val isOutdoorCalibrated: Boolean = false,
+    val isIndoorCalibrated: Boolean = false,
+
     val statusMessage: String = "Location idle"
 )
 
-class TinkerspaceLocationManager(private val context: Context) {
+class TinkerspaceLocationManager(
+    context: Context
+) {
+
+    private val appContext = context.applicationContext
 
     private val fusedClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context)
+        LocationServices.getFusedLocationProviderClient(appContext)
 
-    private val _locationInfo = MutableStateFlow(TinkerspaceLocationInfo())
-    val locationInfo: StateFlow<TinkerspaceLocationInfo> = _locationInfo.asStateFlow()
+    private val _locationInfo = MutableStateFlow(
+        TinkerspaceLocationInfo()
+    )
+
+    val locationInfo: StateFlow<TinkerspaceLocationInfo> =
+        _locationInfo.asStateFlow()
 
     private var activeCallback: LocationCallback? = null
 
-    fun hasLocationPermission(): Boolean {
-        val fine = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        return fine || coarse
+    private var outdoorEventSent = false
+    private var indoorEventSent = false
+
+    init {
+        TinkerspaceLocationConfig.load(appContext)
+
+        _locationInfo.value = _locationInfo.value.copy(
+            isOutdoorCalibrated =
+                TinkerspaceLocationConfig.outdoorCalibrated,
+            isIndoorCalibrated =
+                TinkerspaceLocationConfig.indoorCalibrated
+        )
     }
 
+    fun hasLocationPermission(): Boolean {
+        val fineGranted = ContextCompat.checkSelfPermission(
+            appContext,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val coarseGranted = ContextCompat.checkSelfPermission(
+            appContext,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        return fineGranted || coarseGranted
+    }
+
+    /**
+     * Start receiving actual Android location updates.
+     *
+     * The manager never invents coordinates. It uses locations returned
+     * by the Android location provider.
+     */
     @SuppressLint("MissingPermission")
     fun startMonitoring(
         onOutdoorArrival: () -> Unit,
@@ -61,44 +100,100 @@ class TinkerspaceLocationManager(private val context: Context) {
             _locationInfo.value = _locationInfo.value.copy(
                 hasPermission = false,
                 isMonitoring = false,
-                statusMessage = "Location permission not granted"
+                statusMessage = "Location permission required"
             )
             return
         }
 
         stopMonitoring()
 
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
-            .setMinUpdateIntervalMillis(1500L)
-            .setMinUpdateDistanceMeters(2.0f)
+        outdoorEventSent = false
+        indoorEventSent = false
+
+        TinkerspaceLocationConfig.load(appContext)
+
+        val request = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY,
+            2000L
+        )
+            .setMinUpdateIntervalMillis(1000L)
+            .setMinUpdateDistanceMeters(1.0f)
             .build()
 
         val callback = object : LocationCallback() {
+
             override fun onLocationResult(result: LocationResult) {
-                val loc = result.lastLocation ?: return
-                processLocation(loc, onOutdoorArrival, onIndoorArrival, isOutdoorExpected, isIndoorExpected)
+                result.locations.forEach { location ->
+                    processLocation(
+                        location = location,
+                        onOutdoorArrival = onOutdoorArrival,
+                        onIndoorArrival = onIndoorArrival,
+                        isOutdoorExpected = isOutdoorExpected,
+                        isIndoorExpected = isIndoorExpected
+                    )
+                }
             }
         }
 
         activeCallback = callback
 
+        _locationInfo.value = _locationInfo.value.copy(
+            hasPermission = true,
+            isMonitoring = true,
+            isOutdoorCalibrated =
+                TinkerspaceLocationConfig.outdoorCalibrated,
+            isIndoorCalibrated =
+                TinkerspaceLocationConfig.indoorCalibrated,
+            statusMessage = "Waiting for a fresh GPS fix..."
+        )
+
         try {
-            fusedClient.requestLocationUpdates(request, callback, Looper.getMainLooper())
-            _locationInfo.value = _locationInfo.value.copy(
-                hasPermission = true,
-                isMonitoring = true,
-                statusMessage = "Monitoring GPS for arrival..."
-            )
-            // Also query last known location immediately
-            fusedClient.lastLocation.addOnSuccessListener { loc ->
-                if (loc != null) {
-                    processLocation(loc, onOutdoorArrival, onIndoorArrival, isOutdoorExpected, isIndoorExpected)
-                }
+            fusedClient.requestLocationUpdates(
+                request,
+                callback,
+                Looper.getMainLooper()
+            ).addOnFailureListener { error ->
+                _locationInfo.value = _locationInfo.value.copy(
+                    isMonitoring = false,
+                    statusMessage =
+                        "Could not start GPS: ${
+                            error.localizedMessage ?: "Unknown error"
+                        }"
+                )
             }
-        } catch (e: Exception) {
+
+            // A last-known location may be displayed, but it will not
+            // trigger arrival unless it is fresh enough.
+            fusedClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    processLocation(
+                        location = location,
+                        onOutdoorArrival = onOutdoorArrival,
+                        onIndoorArrival = onIndoorArrival,
+                        isOutdoorExpected = isOutdoorExpected,
+                        isIndoorExpected = isIndoorExpected
+                    )
+                }
+            }.addOnFailureListener {
+                _locationInfo.value = _locationInfo.value.copy(
+                    statusMessage =
+                        "Waiting for a fresh GPS fix..."
+                )
+            }
+
+        } catch (securityException: SecurityException) {
+            _locationInfo.value = _locationInfo.value.copy(
+                hasPermission = false,
+                isMonitoring = false,
+                statusMessage = "Location permission was denied"
+            )
+        } catch (exception: Exception) {
             _locationInfo.value = _locationInfo.value.copy(
                 isMonitoring = false,
-                statusMessage = "Could not start GPS: ${e.localizedMessage ?: "Unknown error"}"
+                statusMessage =
+                    "Could not start GPS: ${
+                        exception.localizedMessage ?: "Unknown error"
+                    }"
             )
         }
     }
@@ -110,67 +205,150 @@ class TinkerspaceLocationManager(private val context: Context) {
         isOutdoorExpected: Boolean,
         isIndoorExpected: Boolean
     ) {
-        val distOutdoor = FloatArray(1)
-        Location.distanceBetween(
-            location.latitude,
-            location.longitude,
-            TinkerspaceLocationConfig.outdoorLatitude,
-            TinkerspaceLocationConfig.outdoorLongitude,
-            distOutdoor
-        )
-        val distanceToOutdoor = distOutdoor[0]
+        TinkerspaceLocationConfig.load(appContext)
 
-        val distIndoor = FloatArray(1)
-        Location.distanceBetween(
-            location.latitude,
-            location.longitude,
-            TinkerspaceLocationConfig.indoorLatitude,
-            TinkerspaceLocationConfig.indoorLongitude,
-            distIndoor
-        )
-        val distanceToIndoor = distIndoor[0]
+        val now = System.currentTimeMillis()
+        val ageMillis = now - location.time
+
+        val isFresh = ageMillis in 0..15_000L
+        val hasAccuracy = location.hasAccuracy()
+        val accuracy = if (hasAccuracy) location.accuracy else null
+
+        val distanceToOutdoor = if (
+            TinkerspaceLocationConfig.outdoorCalibrated
+        ) {
+            distanceBetween(
+                location,
+                TinkerspaceLocationConfig.outdoorLatitude,
+                TinkerspaceLocationConfig.outdoorLongitude
+            )
+        } else {
+            null
+        }
+
+        val distanceToIndoor = if (
+            TinkerspaceLocationConfig.indoorCalibrated
+        ) {
+            distanceBetween(
+                location,
+                TinkerspaceLocationConfig.indoorLatitude,
+                TinkerspaceLocationConfig.indoorLongitude
+            )
+        } else {
+            null
+        }
+
+        val status = when {
+            !isFresh ->
+                "GPS fix is stale; waiting for a fresh reading"
+
+            !hasAccuracy ->
+                "GPS accuracy unavailable"
+
+            accuracy != null &&
+                accuracy > TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS ->
+                "Accuracy too low: ±${accuracy.toInt()} m"
+
+            else ->
+                "GPS tracking active"
+        }
 
         _locationInfo.value = _locationInfo.value.copy(
             hasPermission = true,
-            isMonitoring = true,
+            isMonitoring = activeCallback != null,
+
             lastLatitude = location.latitude,
             lastLongitude = location.longitude,
-            accuracyMeters = location.accuracy,
+
+            accuracyMeters = accuracy,
+
             distanceToOutdoorMeters = distanceToOutdoor,
             distanceToIndoorMeters = distanceToIndoor,
-            statusMessage = "GPS active (Accuracy ±${location.accuracy.toInt()}m)"
+
+            lastFixTimeMillis = location.time,
+
+            isOutdoorCalibrated =
+                TinkerspaceLocationConfig.outdoorCalibrated,
+            isIndoorCalibrated =
+                TinkerspaceLocationConfig.indoorCalibrated,
+
+            statusMessage = status
         )
 
-        // Accuracy check: if accuracy is too low, avoid triggering false positives
-        if (location.hasAccuracy() && location.accuracy > TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS) {
+        // Do not use old or inaccurate readings to change trip state.
+        if (!isFresh || !hasAccuracy) return
+
+        if (
+            accuracy != null &&
+            accuracy > TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS
+        ) {
             return
         }
 
-        // Check Outdoor arrival zone
-        if (isOutdoorExpected && distanceToOutdoor <= TinkerspaceLocationConfig.outdoorRadiusMeters) {
+        // Outdoor destination: only trigger after explicit calibration.
+        if (
+            isOutdoorExpected &&
+            !outdoorEventSent &&
+            TinkerspaceLocationConfig.outdoorCalibrated &&
+            distanceToOutdoor != null &&
+            distanceToOutdoor <=
+                TinkerspaceLocationConfig.outdoorRadiusMeters
+        ) {
+            outdoorEventSent = true
             onOutdoorArrival()
             return
         }
 
-        // Check Indoor return zone
-        if (isIndoorExpected && distanceToIndoor <= TinkerspaceLocationConfig.indoorRadiusMeters) {
+        // Indoor destination: also requires explicit calibration.
+        if (
+            isIndoorExpected &&
+            !indoorEventSent &&
+            TinkerspaceLocationConfig.indoorCalibrated &&
+            distanceToIndoor != null &&
+            distanceToIndoor <=
+                TinkerspaceLocationConfig.indoorRadiusMeters
+        ) {
+            indoorEventSent = true
             onIndoorArrival()
-            return
         }
     }
 
+    private fun distanceBetween(
+        location: Location,
+        destinationLatitude: Double,
+        destinationLongitude: Double
+    ): Float {
+        val result = FloatArray(1)
+
+        Location.distanceBetween(
+            location.latitude,
+            location.longitude,
+            destinationLatitude,
+            destinationLongitude,
+            result
+        )
+
+        return result[0]
+    }
+
     fun stopMonitoring() {
-        activeCallback?.let {
+        activeCallback?.let { callback ->
             try {
-                fusedClient.removeLocationUpdates(it)
-            } catch (e: Exception) {
-                // Safe ignore
+                fusedClient.removeLocationUpdates(callback)
+            } catch (_: Exception) {
+                // Cleanup must not crash the UI.
             }
         }
+
         activeCallback = null
+
         _locationInfo.value = _locationInfo.value.copy(
             isMonitoring = false,
-            statusMessage = "Location monitoring idle"
+            statusMessage = if (_locationInfo.value.lastLatitude != null) {
+                "GPS tracking paused"
+            } else {
+                "Location monitoring idle"
+            }
         )
     }
 }

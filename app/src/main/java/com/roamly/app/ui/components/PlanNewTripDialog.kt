@@ -274,7 +274,7 @@ fun PlanNewTripDialog(
                             dates = "$departureDate ($durationDays days)",
                             durationDays = durationDays,
                             travelerCount = travelerCount,
-                            travelers = listOf("Alex Chen"),
+                            travelers = emptyList(),
                             status = TripStatus.PLANNING,
                             summary = "Personal trip to $destName focused on ${selectedInterests.joinToString(", ")}.",
                             meetingPoint = "Hotel Lobby / Central Station",

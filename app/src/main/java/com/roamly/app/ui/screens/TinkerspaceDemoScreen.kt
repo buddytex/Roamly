@@ -1,10 +1,8 @@
 package com.roamly.app.ui.screens
 
 import android.Manifest
-import android.annotation.SuppressLint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,13 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Luggage
-import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,9 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -65,10 +58,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.roamly.app.data.RoamlyRepository
 import com.roamly.app.data.SampleData
+import com.roamly.app.location.TinkerspaceLocationConfig
 import com.roamly.app.location.TinkerspaceLocationManager
 import com.roamly.app.model.TinkerspaceWorkflowState
-import com.roamly.app.ui.theme.RoamlyAccent
-import com.roamly.app.ui.theme.RoamlyAccentContainer
 import com.roamly.app.ui.theme.RoamlyBackground
 import com.roamly.app.ui.theme.RoamlyBorder
 import com.roamly.app.ui.theme.RoamlyPrimary
@@ -89,70 +81,116 @@ fun TinkerspaceDemoScreen(
     onReviewChecklist: () -> Unit = {}
 ) {
     val context = LocalContext.current
+
     val workflowState by repository.tinkerspaceWorkflowState.collectAsState()
-    val isSimulated by repository.tinkerspaceIsSimulated.collectAsState()
     val belongingsCheckedTime by repository.tinkerspaceBelongingsCheckedTime.collectAsState()
 
-    val locationManager = remember { TinkerspaceLocationManager(context) }
+    val locationManager = remember {
+        TinkerspaceLocationManager(context)
+    }
+
     val locationInfo by locationManager.locationInfo.collectAsState()
 
-    var showOutdoorArrivalDialog by remember { mutableStateOf(false) }
-    var showIndoorArrivalDialog by remember { mutableStateOf(false) }
+    var showOutdoorArrivalDialog by remember {
+        mutableStateOf(false)
+    }
 
-    // Belongings quick checklist selections for this review
+    var showIndoorArrivalDialog by remember {
+        mutableStateOf(false)
+    }
+
     val checkedBelongings = remember {
         mutableStateMapOf<String, Boolean>().apply {
-            SampleData.belongingDepartureItems.take(5).forEach { put(it, false) }
+            SampleData.belongingDepartureItems
+                .take(5)
+                .forEach { put(it, false) }
         }
     }
 
-    // Permission launcher
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) {
-            repository.startTinkerspaceTrip()
-            locationManager.startMonitoring(
-                onOutdoorArrival = {
-                    repository.reachTinkerspaceOutdoorStop(isSimulated = false)
-                    showOutdoorArrivalDialog = true
-                },
-                onIndoorArrival = {
-                    repository.reachTinkerspaceIndoorStop(isSimulated = false)
-                    showIndoorArrivalDialog = true
-                },
-                isOutdoorExpected = workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
-                isIndoorExpected = workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
-            )
-        } else {
-            // Permission denied: start trip anyway with simulation fallback available
-            repository.startTinkerspaceTrip()
-        }
-    }
+    val tripPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
 
-    // Location monitoring lifecycle effect
-    DisposableEffect(workflowState) {
-        if (workflowState == TinkerspaceWorkflowState.IN_PROGRESS ||
-            workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
-        ) {
-            if (locationManager.hasLocationPermission()) {
+            val granted =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            if (granted) {
+                repository.startTinkerspaceTrip()
+
                 locationManager.startMonitoring(
                     onOutdoorArrival = {
-                        repository.reachTinkerspaceOutdoorStop(isSimulated = false)
+                        repository.reachTinkerspaceOutdoorStop(
+                            isSimulated = false
+                        )
                         showOutdoorArrivalDialog = true
                     },
                     onIndoorArrival = {
-                        repository.reachTinkerspaceIndoorStop(isSimulated = false)
+                        repository.reachTinkerspaceIndoorStop(
+                            isSimulated = false
+                        )
                         showIndoorArrivalDialog = true
                     },
-                    isOutdoorExpected = workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
-                    isIndoorExpected = workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
+                    isOutdoorExpected =
+                        workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
+                    isIndoorExpected =
+                        workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
                 )
             }
-        } else {
-            locationManager.stopMonitoring()
+        }
+
+    val calibrationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+
+            val granted =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            if (granted) {
+                locationManager.startMonitoring(
+                    onOutdoorArrival = {
+                        repository.reachTinkerspaceOutdoorStop(
+                            isSimulated = false
+                        )
+                        showOutdoorArrivalDialog = true
+                    },
+                    onIndoorArrival = {
+                        repository.reachTinkerspaceIndoorStop(
+                            isSimulated = false
+                        )
+                        showIndoorArrivalDialog = true
+                    },
+                    isOutdoorExpected =
+                        workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
+                    isIndoorExpected =
+                        workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
+                )
+            }
+        }
+
+    DisposableEffect(workflowState) {
+        if (locationManager.hasLocationPermission()) {
+            locationManager.startMonitoring(
+                onOutdoorArrival = {
+                    repository.reachTinkerspaceOutdoorStop(
+                        isSimulated = false
+                    )
+                    showOutdoorArrivalDialog = true
+                },
+                onIndoorArrival = {
+                    repository.reachTinkerspaceIndoorStop(
+                        isSimulated = false
+                    )
+                    showIndoorArrivalDialog = true
+                },
+                isOutdoorExpected =
+                    workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
+                isIndoorExpected =
+                    workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
+            )
         }
 
         onDispose {
@@ -160,10 +198,11 @@ fun TinkerspaceDemoScreen(
         }
     }
 
-    // STOP 1 ARRIVAL DIALOG
     if (showOutdoorArrivalDialog) {
         AlertDialog(
-            onDismissRequest = { showOutdoorArrivalDialog = false },
+            onDismissRequest = {
+                showOutdoorArrivalDialog = false
+            },
             title = {
                 Text(
                     text = "You've Arrived!",
@@ -172,37 +211,37 @@ fun TinkerspaceDemoScreen(
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
-                        text = "You've reached the outside of Tinkerspace building.",
+                        text = "You've reached the outside Tinkerspace destination.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = RoamlyTextPrimary
                     )
+
                     Text(
                         text = "Next destination: Back Inside Tinkerspace Building",
                         style = MaterialTheme.typography.bodySmall,
                         color = RoamlyTextSecondary,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(RoamlyPrimaryContainer)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "1 of 2 locations reached",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = RoamlyPrimary
-                        )
-                    }
+
+                    StatusChip(
+                        text = "1 of 2 locations reached",
+                        backgroundColor = RoamlyPrimaryContainer,
+                        textColor = RoamlyPrimary
+                    )
                 }
             },
             confirmButton = {
                 Button(
-                    onClick = { showOutdoorArrivalDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                    onClick = {
+                        showOutdoorArrivalDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = RoamlyPrimary
+                    )
                 ) {
                     Text("Continue Journey")
                 }
@@ -210,10 +249,11 @@ fun TinkerspaceDemoScreen(
         )
     }
 
-    // STOP 2 ARRIVAL DIALOG
     if (showIndoorArrivalDialog) {
         AlertDialog(
-            onDismissRequest = { showIndoorArrivalDialog = false },
+            onDismissRequest = {
+                showIndoorArrivalDialog = false
+            },
             title = {
                 Text(
                     text = "Welcome Back!",
@@ -222,31 +262,27 @@ fun TinkerspaceDemoScreen(
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
-                        text = "You've reached your final destination.",
+                        text = "You've reached the final destination.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = RoamlyTextPrimary
                     )
+
                     Text(
                         text = "Your trip is complete!",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = RoamlySuccess
                     )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(RoamlyPrimaryContainer)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "2 of 2 locations reached",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = RoamlyPrimary
-                        )
-                    }
+
+                    StatusChip(
+                        text = "2 of 2 locations reached",
+                        backgroundColor = RoamlyPrimaryContainer,
+                        textColor = RoamlyPrimary
+                    )
                 }
             },
             confirmButton = {
@@ -255,7 +291,9 @@ fun TinkerspaceDemoScreen(
                         showIndoorArrivalDialog = false
                         repository.proceedToBelongingsCheck()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = RoamlyPrimary
+                    )
                 ) {
                     Text("Check Belongings")
                 }
@@ -263,7 +301,6 @@ fun TinkerspaceDemoScreen(
         )
     }
 
-    // MAIN CONTENT
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -271,9 +308,10 @@ fun TinkerspaceDemoScreen(
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            // TOP BAR
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -284,7 +322,11 @@ fun TinkerspaceDemoScreen(
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(RoamlySurface)
-                        .border(1.dp, RoamlyBorder, CircleShape)
+                        .border(
+                            1.dp,
+                            RoamlyBorder,
+                            CircleShape
+                        )
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -292,7 +334,9 @@ fun TinkerspaceDemoScreen(
                         tint = RoamlyTextPrimary
                     )
                 }
+
                 Spacer(modifier = Modifier.width(12.dp))
+
                 Column {
                     Text(
                         text = "Outside Tinkerspace",
@@ -300,8 +344,9 @@ fun TinkerspaceDemoScreen(
                         fontWeight = FontWeight.Bold,
                         color = RoamlyTextPrimary
                     )
+
                     Text(
-                        text = "Location Demonstration Journey",
+                        text = "GPS Location Demonstration",
                         style = MaterialTheme.typography.bodySmall,
                         color = RoamlyTextSecondary
                     )
@@ -309,17 +354,27 @@ fun TinkerspaceDemoScreen(
             }
         }
 
-        // 1. ROUTE & PROGRESS CARD ("Your Short Trip")
         item {
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = RoamlySurface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = RoamlySurface
+                ),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = 2.dp
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(20.dp))
+                    .border(
+                        1.dp,
+                        RoamlyBorder,
+                        RoundedCornerShape(20.dp)
+                    )
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(
+                    modifier = Modifier.padding(20.dp)
+                ) {
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -337,27 +392,28 @@ fun TinkerspaceDemoScreen(
                             TinkerspaceWorkflowState.COMPLETED -> "Completed"
                             else -> "In Progress"
                         }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (workflowState == TinkerspaceWorkflowState.COMPLETED) RoamlySuccess.copy(alpha = 0.15f)
-                                    else RoamlyPrimaryContainer
-                                )
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = statusLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (workflowState == TinkerspaceWorkflowState.COMPLETED) RoamlySuccess else RoamlyPrimary
-                            )
-                        }
+
+                        StatusChip(
+                            text = statusLabel,
+                            backgroundColor =
+                                if (workflowState == TinkerspaceWorkflowState.COMPLETED) {
+                                    RoamlySuccess.copy(alpha = 0.15f)
+                                } else {
+                                    RoamlyPrimaryContainer
+                                },
+                            textColor =
+                                if (workflowState == TinkerspaceWorkflowState.COMPLETED) {
+                                    RoamlySuccess
+                                } else {
+                                    RoamlyPrimary
+                                }
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text(
-                        text = "A short demonstration trip showing location-aware arrivals, trip progress, and belongings verification.",
+                        text = "Roamly uses your phone's real GPS position to detect when you reach the configured destinations.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = RoamlyTextSecondary,
                         lineHeight = 20.sp
@@ -365,17 +421,24 @@ fun TinkerspaceDemoScreen(
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // Progress Bar & Counter
                     val progressRatio = when (workflowState) {
-                        TinkerspaceWorkflowState.UPCOMING -> 0.0f
-                        TinkerspaceWorkflowState.IN_PROGRESS -> 0.0f
+                        TinkerspaceWorkflowState.UPCOMING -> 0f
+                        TinkerspaceWorkflowState.IN_PROGRESS -> 0f
                         TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED -> 0.5f
-                        else -> 1.0f
+                        TinkerspaceWorkflowState.INDOOR_STOP_REACHED,
+                        TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK,
+                        TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION,
+                        TinkerspaceWorkflowState.COMPLETED -> 1f
                     }
+
                     val progressText = when (workflowState) {
                         TinkerspaceWorkflowState.UPCOMING,
-                        TinkerspaceWorkflowState.IN_PROGRESS -> "0 of 2 locations reached"
-                        TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED -> "1 of 2 locations reached"
+                        TinkerspaceWorkflowState.IN_PROGRESS ->
+                            "0 of 2 locations reached"
+
+                        TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED ->
+                            "1 of 2 locations reached"
+
                         else -> "2 of 2 locations reached"
                     }
 
@@ -390,6 +453,7 @@ fun TinkerspaceDemoScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = RoamlyTextSecondary
                         )
+
                         Text(
                             text = progressText,
                             style = MaterialTheme.typography.labelMedium,
@@ -399,6 +463,7 @@ fun TinkerspaceDemoScreen(
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+
                     LinearProgressIndicator(
                         progress = { progressRatio },
                         modifier = Modifier
@@ -411,9 +476,8 @@ fun TinkerspaceDemoScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Route Stops List
                     Text(
-                        text = "Route:",
+                        text = "Route",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = RoamlyTextPrimary
@@ -421,235 +485,455 @@ fun TinkerspaceDemoScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Stop 1
-                    val stop1Reached = workflowState != TinkerspaceWorkflowState.UPCOMING &&
+                    val outdoorReached =
+                        workflowState != TinkerspaceWorkflowState.UPCOMING &&
                             workflowState != TinkerspaceWorkflowState.IN_PROGRESS
-                    val stop1Active = workflowState == TinkerspaceWorkflowState.IN_PROGRESS
 
                     StopItemRow(
                         stopNumber = 1,
                         stopName = "Outside Tinkerspace Building",
-                        stopDesc = "The traveller leaves the building and reaches the designated outdoor arrival zone.",
-                        isReached = stop1Reached,
-                        isActive = stop1Active
+                        stopDesc = "Reach the calibrated outdoor GPS destination.",
+                        isReached = outdoorReached,
+                        isActive = workflowState == TinkerspaceWorkflowState.IN_PROGRESS
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Stop 2
-                    val stop2Reached = workflowState == TinkerspaceWorkflowState.INDOOR_STOP_REACHED ||
+                    val indoorReached =
+                        workflowState == TinkerspaceWorkflowState.INDOOR_STOP_REACHED ||
                             workflowState == TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK ||
                             workflowState == TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION ||
                             workflowState == TinkerspaceWorkflowState.COMPLETED
-                    val stop2Active = workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
 
                     StopItemRow(
                         stopNumber = 2,
                         stopName = "Back Inside Tinkerspace Building",
-                        stopDesc = "The traveller returns to the designated indoor arrival zone, completing the route.",
-                        isReached = stop2Reached,
-                        isActive = stop2Active
+                        stopDesc = "Return to the separately calibrated indoor destination.",
+                        isReached = indoorReached,
+                        isActive = workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
                     )
                 }
             }
         }
 
-        // 2. LOCATION STATUS / DETECTION INFO
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                colors = CardDefaults.cardColors(
+                    containerColor = RoamlySurface
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, RoamlyBorder, RoundedCornerShape(16.dp))
+                    .border(
+                        1.dp,
+                        RoamlyBorder,
+                        RoundedCornerShape(16.dp)
+                    )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
                             imageVector = Icons.Default.LocationOn,
                             contentDescription = null,
                             tint = RoamlyPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
+
                         Spacer(modifier = Modifier.width(8.dp))
+
                         Text(
-                            text = "Location Detection Mode",
-                            style = MaterialTheme.typography.titleSmall,
+                            text = "Live GPS Diagnostics",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = RoamlyTextPrimary
                         )
                     }
 
+                    Text(
+                        text = locationInfo.statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    DiagnosticRow(
+                        label = "Latitude",
+                        value = locationInfo.lastLatitude?.let {
+                            String.format(Locale.US, "%.6f", it)
+                        } ?: "Waiting for GPS"
+                    )
+
+                    DiagnosticRow(
+                        label = "Longitude",
+                        value = locationInfo.lastLongitude?.let {
+                            String.format(Locale.US, "%.6f", it)
+                        } ?: "Waiting for GPS"
+                    )
+
+                    DiagnosticRow(
+                        label = "GPS accuracy",
+                        value = locationInfo.accuracyMeters?.let {
+                            String.format(Locale.US, "±%.1f m", it)
+                        } ?: "Unavailable"
+                    )
+
+                    DiagnosticRow(
+                        label = "Outdoor distance",
+                        value = locationInfo.distanceToOutdoorMeters?.let {
+                            String.format(Locale.US, "%.1f m", it)
+                        } ?: "Not calibrated"
+                    )
+
+                    DiagnosticRow(
+                        label = "Indoor distance",
+                        value = locationInfo.distanceToIndoorMeters?.let {
+                            String.format(Locale.US, "%.1f m", it)
+                        } ?: "Not calibrated"
+                    )
+
+                    DiagnosticRow(
+                        label = "Geofence radius",
+                        value = "${TinkerspaceLocationConfig.DEFAULT_GEOFENCE_RADIUS_METERS.toInt()} m"
+                    )
+
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (locationInfo.hasPermission) {
-                        Text(
-                            text = "Automatic mode is active. Roamly continuously monitors GPS boundaries to trigger arrival notifications when you enter demonstration zones.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = RoamlyTextSecondary,
-                            lineHeight = 18.sp
-                        )
-                        if (locationInfo.accuracyMeters != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "GPS status: ±${locationInfo.accuracyMeters?.toInt()}m accuracy",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = RoamlyPrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = "Location access is optional. If GPS is unavailable indoors or permissions are not granted, use the 'Demo: Simulate Arrival' fallback button below.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = RoamlyTextSecondary,
-                            lineHeight = 18.sp
-                        )
-                    }
-
-                    if (isSimulated && workflowState != TinkerspaceWorkflowState.UPCOMING) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(RoamlyAccentContainer)
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "Demonstration simulation was used for this event",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = RoamlyAccent,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. WORKFLOW ACTIONS ACCORDING TO STATE MACHINE
-        item {
-            when (workflowState) {
-                TinkerspaceWorkflowState.UPCOMING -> {
                     Button(
                         onClick = {
-                            if (locationManager.hasLocationPermission()) {
-                                repository.startTinkerspaceTrip()
-                            } else {
-                                permissionLauncher.launch(
+                            if (!locationManager.hasLocationPermission()) {
+                                calibrationPermissionLauncher.launch(
                                     arrayOf(
                                         Manifest.permission.ACCESS_FINE_LOCATION,
                                         Manifest.permission.ACCESS_COARSE_LOCATION
                                     )
                                 )
+                            } else {
+                                val latitude = locationInfo.lastLatitude
+                                val longitude = locationInfo.lastLongitude
+                                val accuracy = locationInfo.accuracyMeters
+
+                                if (
+                                    latitude != null &&
+                                    longitude != null &&
+                                    accuracy != null &&
+                                    accuracy <= TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS
+                                ) {
+                                    TinkerspaceLocationConfig.calibrateOutdoor(
+                                        context = context,
+                                        latitude = latitude,
+                                        longitude = longitude
+                                    )
+
+                                    locationManager.startMonitoring(
+                                        onOutdoorArrival = {
+                                            repository.reachTinkerspaceOutdoorStop(
+                                                isSimulated = false
+                                            )
+                                            showOutdoorArrivalDialog = true
+                                        },
+                                        onIndoorArrival = {
+                                            repository.reachTinkerspaceIndoorStop(
+                                                isSimulated = false
+                                            )
+                                            showIndoorArrivalDialog = true
+                                        },
+                                        isOutdoorExpected =
+                                            workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
+                                        isIndoorExpected =
+                                            workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
+                                    )
+                                }
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = RoamlySurface,
-                            modifier = Modifier.size(20.dp)
+                        enabled =
+                            !locationManager.hasLocationPermission() ||
+                                (
+                                    locationInfo.lastLatitude != null &&
+                                        locationInfo.lastLongitude != null &&
+                                        (
+                                            locationInfo.accuracyMeters?.let {
+                                                it <= TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS
+                                            } == true
+                                        )
+                                    ),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = RoamlyPrimary
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    ) {
                         Text(
-                            text = "Start Trip",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            text = "Calibrate Outdoor Destination",
                             color = RoamlySurface
                         )
+                    }
+
+                    Text(
+                        text = if (locationInfo.isOutdoorCalibrated) {
+                            "Outdoor destination: ${
+                                String.format(
+                                    Locale.US,
+                                    "%.6f",
+                                    TinkerspaceLocationConfig.outdoorLatitude
+                                )
+                            }, ${
+                                String.format(
+                                    Locale.US,
+                                    "%.6f",
+                                    TinkerspaceLocationConfig.outdoorLongitude
+                                )
+                            }"
+                        } else {
+                            "Not calibrated. Stand at the intended outdoor destination and wait for GPS accuracy of 10 m or better."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color =
+                            if (locationInfo.isOutdoorCalibrated) {
+                                RoamlySuccess
+                            } else {
+                                RoamlyTextSecondary
+                            },
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            if (!locationManager.hasLocationPermission()) {
+                                calibrationPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            } else {
+                                val latitude = locationInfo.lastLatitude
+                                val longitude = locationInfo.lastLongitude
+                                val accuracy = locationInfo.accuracyMeters
+
+                                if (
+                                    latitude != null &&
+                                    longitude != null &&
+                                    accuracy != null &&
+                                    accuracy <= TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS
+                                ) {
+                                    TinkerspaceLocationConfig.calibrateIndoor(
+                                        context = context,
+                                        latitude = latitude,
+                                        longitude = longitude
+                                    )
+
+                                    locationManager.startMonitoring(
+                                        onOutdoorArrival = {
+                                            repository.reachTinkerspaceOutdoorStop(
+                                                isSimulated = false
+                                            )
+                                            showOutdoorArrivalDialog = true
+                                        },
+                                        onIndoorArrival = {
+                                            repository.reachTinkerspaceIndoorStop(
+                                                isSimulated = false
+                                            )
+                                            showIndoorArrivalDialog = true
+                                        },
+                                        isOutdoorExpected =
+                                            workflowState == TinkerspaceWorkflowState.IN_PROGRESS,
+                                        isIndoorExpected =
+                                            workflowState == TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED
+                                    )
+                                }
+                            }
+                        },
+                        enabled =
+                            !locationManager.hasLocationPermission() ||
+                                (
+                                    locationInfo.lastLatitude != null &&
+                                        locationInfo.lastLongitude != null &&
+                                        (
+                                            locationInfo.accuracyMeters?.let {
+                                                it <= TinkerspaceLocationConfig.REQUIRED_ACCURACY_METERS
+                                            } == true
+                                        )
+                                    ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Calibrate Indoor Destination")
+                    }
+
+                    Text(
+                        text = if (locationInfo.isIndoorCalibrated) {
+                            "Indoor destination: ${
+                                String.format(
+                                    Locale.US,
+                                    "%.6f",
+                                    TinkerspaceLocationConfig.indoorLatitude
+                                )
+                            }, ${
+                                String.format(
+                                    Locale.US,
+                                    "%.6f",
+                                    TinkerspaceLocationConfig.indoorLongitude
+                                )
+                            }"
+                        } else {
+                            "Not calibrated. Calibrate the indoor point separately."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color =
+                            if (locationInfo.isIndoorCalibrated) {
+                                RoamlySuccess
+                            } else {
+                                RoamlyTextSecondary
+                            },
+                        lineHeight = 18.sp
+                    )
+
+                    Text(
+                        text = "Calibration saves the phone's current coordinates as the destination. For reliable testing, wait until GPS accuracy is 10 metres or better.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoamlyTextSecondary,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        item {
+            when (workflowState) {
+
+                TinkerspaceWorkflowState.UPCOMING -> {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Before starting, calibrate both destinations above. The arrival workflow uses GPS rather than manual simulation.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = RoamlyTextSecondary,
+                            lineHeight = 20.sp
+                        )
+
+                        Button(
+                            onClick = {
+                                if (locationManager.hasLocationPermission()) {
+                                    repository.startTinkerspaceTrip()
+                                } else {
+                                    tripPermissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = RoamlyPrimary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = RoamlySurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Text(
+                                text = "Start Trip",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = RoamlySurface
+                            )
+                        }
                     }
                 }
 
                 TinkerspaceWorkflowState.IN_PROGRESS -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "Current Objective: Reach Outside Tinkerspace Building",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = RoamlyTextPrimary
-                        )
-
-                        // Fallback Simulation Button
-                        OutlinedButton(
-                            onClick = {
-                                repository.reachTinkerspaceOutdoorStop(isSimulated = true)
-                                showOutdoorArrivalDialog = true
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.5.dp, RoamlyPrimary)
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = RoamlyPrimaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.TouchApp,
-                                contentDescription = null,
-                                tint = RoamlyPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Demo: Simulate Arrival",
+                                text = "Current Objective",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = RoamlyPrimary
+                            )
+
+                            Text(
+                                text = "Reach Outside Tinkerspace Building",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = RoamlyPrimary
+                                color = RoamlyTextPrimary
+                            )
+
+                            Text(
+                                text = if (locationInfo.isOutdoorCalibrated) {
+                                    "Walk to the calibrated outdoor destination. Arrival will be detected when a valid GPS fix places you within the 10-metre geofence."
+                                } else {
+                                    "The outdoor destination is not calibrated yet. Calibrate it in the GPS diagnostics card."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = RoamlyTextSecondary,
+                                lineHeight = 20.sp
                             )
                         }
                     }
                 }
 
                 TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = RoamlyPrimaryContainer),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = RoamlyPrimaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text(
-                                    text = "Stop 1 Reached: Outside Tinkerspace Building",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyPrimary
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Next expected destination: Back Inside Tinkerspace Building",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = RoamlyTextPrimary
-                                )
-                            }
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                repository.reachTinkerspaceIndoorStop(isSimulated = true)
-                                showIndoorArrivalDialog = true
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.5.dp, RoamlyPrimary)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.TouchApp,
-                                contentDescription = null,
-                                tint = RoamlyPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Demo: Simulate Arrival (Return Indoors)",
+                                text = "Stop 1 Reached",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = RoamlyPrimary
+                            )
+
+                            Text(
+                                text = "Outside Tinkerspace Building",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = RoamlyTextPrimary
+                            )
+
+                            Text(
+                                text = if (locationInfo.isIndoorCalibrated) {
+                                    "Return to the calibrated indoor destination. Arrival will be detected using GPS."
+                                } else {
+                                    "Calibrate the indoor destination above before returning to it."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = RoamlyTextSecondary,
+                                lineHeight = 20.sp
                             )
                         }
                     }
@@ -657,16 +941,25 @@ fun TinkerspaceDemoScreen(
 
                 TinkerspaceWorkflowState.INDOOR_STOP_REACHED,
                 TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK -> {
-                    // Belongings Verification Screen
                     Card(
                         shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                        colors = CardDefaults.cardColors(
+                            containerColor = RoamlySurface
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.5.dp, RoamlyBorder, RoundedCornerShape(18.dp))
+                            .border(
+                                1.dp,
+                                RoamlyBorder,
+                                RoundedCornerShape(18.dp)
+                            )
                     ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            modifier = Modifier.padding(18.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Box(
                                     modifier = Modifier
                                         .size(40.dp)
@@ -681,7 +974,9 @@ fun TinkerspaceDemoScreen(
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
+
                                 Spacer(modifier = Modifier.width(12.dp))
+
                                 Column {
                                     Text(
                                         text = "Before You Finish...",
@@ -689,8 +984,9 @@ fun TinkerspaceDemoScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = RoamlyTextPrimary
                                     )
+
                                     Text(
-                                        text = "Please check that you have everything with you.",
+                                        text = "Check that you have everything with you.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = RoamlyTextSecondary
                                     )
@@ -700,7 +996,7 @@ fun TinkerspaceDemoScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "Personal Belongings Check:",
+                                text = "Personal Belongings Check",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = RoamlyTextPrimary
@@ -708,25 +1004,31 @@ fun TinkerspaceDemoScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            checkedBelongings.keys.forEach { item ->
+                            checkedBelongings.keys.toList().forEach { item ->
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .clickable {
+                                            checkedBelongings[item] =
+                                                !(checkedBelongings[item] ?: false)
+                                        }
                                         .padding(vertical = 2.dp)
-                                        .clickable { checkedBelongings[item] = !(checkedBelongings[item] ?: false) }
                                 ) {
                                     Checkbox(
-                                        checked = checkedBelongings[item] ?: false,
-                                        onCheckedChange = { isChecked ->
-                                            checkedBelongings[item] = isChecked
+                                        checked =
+                                            checkedBelongings[item] ?: false,
+                                        onCheckedChange = { checked ->
+                                            checkedBelongings[item] = checked
                                         },
                                         colors = CheckboxDefaults.colors(
                                             checkedColor = RoamlyPrimary,
                                             uncheckedColor = RoamlyBorder
                                         )
                                     )
+
                                     Spacer(modifier = Modifier.width(6.dp))
+
                                     Text(
                                         text = item,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -738,7 +1040,7 @@ fun TinkerspaceDemoScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Text(
-                                text = "Note: This is a personal traveller confirmation to help you avoid leaving items behind. Roamly does not physically scan belongings.",
+                                text = "This is a personal confirmation. Roamly does not physically scan your belongings.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = RoamlyTextSecondary,
                                 fontSize = 11.sp,
@@ -747,7 +1049,6 @@ fun TinkerspaceDemoScreen(
 
                             Spacer(modifier = Modifier.height(18.dp))
 
-                            // Action 1: "I've Checked My Belongings"
                             Button(
                                 onClick = {
                                     repository.confirmTinkerspaceBelongingsChecked()
@@ -756,7 +1057,9 @@ fun TinkerspaceDemoScreen(
                                     .fillMaxWidth()
                                     .height(52.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = RoamlyPrimary
+                                )
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
@@ -764,7 +1067,9 @@ fun TinkerspaceDemoScreen(
                                     tint = RoamlySurface,
                                     modifier = Modifier.size(20.dp)
                                 )
+
                                 Spacer(modifier = Modifier.width(8.dp))
+
                                 Text(
                                     text = "I've Checked My Belongings",
                                     style = MaterialTheme.typography.titleMedium,
@@ -775,21 +1080,14 @@ fun TinkerspaceDemoScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Action 2: "Review My Checklist"
                             OutlinedButton(
                                 onClick = onReviewChecklist,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.5.dp, RoamlyPrimary)
+                                shape = RoundedCornerShape(14.dp)
                             ) {
-                                Text(
-                                    text = "Review My Checklist",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyPrimary
-                                )
+                                Text("Review My Checklist")
                             }
                         }
                     }
@@ -798,20 +1096,33 @@ fun TinkerspaceDemoScreen(
                 TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION -> {
                     Card(
                         shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                        colors = CardDefaults.cardColors(
+                            containerColor = RoamlySurface
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.5.dp, RoamlyBorder, RoundedCornerShape(18.dp))
+                            .border(
+                                1.dp,
+                                RoamlyBorder,
+                                RoundedCornerShape(18.dp)
+                            )
                     ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
                                     tint = RoamlySuccess,
                                     modifier = Modifier.size(28.dp)
                                 )
+
                                 Spacer(modifier = Modifier.width(10.dp))
+
                                 Text(
                                     text = "Trip Completed!",
                                     style = MaterialTheme.typography.headlineSmall,
@@ -820,45 +1131,27 @@ fun TinkerspaceDemoScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
                             Text(
-                                text = "You reached both destinations and confirmed your belongings check. Thank you for travelling with Roamly!",
+                                text = "You reached both destinations and confirmed your belongings check.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary,
                                 lineHeight = 20.sp
                             )
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(RoamlyPrimaryContainer)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = "2 of 2 locations reached",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyPrimary
-                                )
-                            }
-
                             if (belongingsCheckedTime > 0) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault())
-                                    .format(Date(belongingsCheckedTime))
+                                val timeString =
+                                    SimpleDateFormat(
+                                        "h:mm a",
+                                        Locale.getDefault()
+                                    ).format(Date(belongingsCheckedTime))
+
                                 Text(
-                                    text = "Belongings confirmed at $timeStr",
+                                    text = "Belongings confirmed at $timeString",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = RoamlyTextSecondary
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(20.dp))
-
-                            // Primary Button: "End Trip"
                             Button(
                                 onClick = {
                                     repository.endTinkerspaceTrip()
@@ -868,11 +1161,12 @@ fun TinkerspaceDemoScreen(
                                     .fillMaxWidth()
                                     .height(52.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = RoamlyPrimary)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = RoamlyPrimary
+                                )
                             ) {
                                 Text(
                                     text = "End Trip",
-                                    style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = RoamlySurface
                                 )
@@ -884,20 +1178,33 @@ fun TinkerspaceDemoScreen(
                 TinkerspaceWorkflowState.COMPLETED -> {
                     Card(
                         shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = RoamlySurface),
+                        colors = CardDefaults.cardColors(
+                            containerColor = RoamlySurface
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.5.dp, RoamlyBorder, RoundedCornerShape(18.dp))
+                            .border(
+                                1.dp,
+                                RoamlyBorder,
+                                RoundedCornerShape(18.dp)
+                            )
                     ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
                                     tint = RoamlySuccess,
                                     modifier = Modifier.size(28.dp)
                                 )
+
                                 Spacer(modifier = Modifier.width(10.dp))
+
                                 Text(
                                     text = "Journey Complete",
                                     style = MaterialTheme.typography.titleLarge,
@@ -906,38 +1213,28 @@ fun TinkerspaceDemoScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
                             Text(
-                                text = "Outside Tinkerspace demonstration journey completed successfully (2 of 2 locations reached).",
+                                text = "The Tinkerspace demonstration journey has been completed.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = RoamlyTextSecondary
                             )
-
-                            Spacer(modifier = Modifier.height(16.dp))
 
                             OutlinedButton(
                                 onClick = {
                                     repository.resetTinkerspaceDemo()
                                 },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.5.dp, RoamlyPrimary)
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
                                     contentDescription = null,
-                                    tint = RoamlyPrimary,
                                     modifier = Modifier.size(18.dp)
                                 )
+
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Reset Demo",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoamlyPrimary
-                                )
+
+                                Text("Reset Demo")
                             }
                         }
                     }
@@ -948,6 +1245,57 @@ fun TinkerspaceDemoScreen(
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun StatusChip(
+    text: String,
+    backgroundColor: androidx.compose.ui.graphics.Color,
+    textColor: androidx.compose.ui.graphics.Color
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(backgroundColor)
+            .padding(
+                horizontal = 10.dp,
+                vertical = 5.dp
+            )
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+    }
+}
+
+@Composable
+private fun DiagnosticRow(
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = RoamlyTextSecondary
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = RoamlyTextPrimary
+        )
     }
 }
 
@@ -963,7 +1311,13 @@ private fun StopItemRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isActive) RoamlyPrimaryContainer.copy(alpha = 0.5f) else RoamlySurfaceVariant)
+            .background(
+                if (isActive) {
+                    RoamlyPrimaryContainer.copy(alpha = 0.5f)
+                } else {
+                    RoamlySurfaceVariant
+                }
+            )
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -972,22 +1326,24 @@ private fun StopItemRow(
                 .size(32.dp)
                 .clip(CircleShape)
                 .background(
-                    if (isReached) RoamlySuccess
-                    else if (isActive) RoamlyPrimary
-                    else RoamlyBorder
+                    when {
+                        isReached -> RoamlySuccess
+                        isActive -> RoamlyPrimary
+                        else -> RoamlyBorder
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
             if (isReached) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = null,
+                    contentDescription = "Reached",
                     tint = RoamlySurface,
                     modifier = Modifier.size(18.dp)
                 )
             } else {
                 Text(
-                    text = "$stopNumber",
+                    text = stopNumber.toString(),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = RoamlySurface
@@ -997,14 +1353,18 @@ private fun StopItemRow(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
             Text(
                 text = stopName,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = RoamlyTextPrimary
             )
+
             Spacer(modifier = Modifier.height(2.dp))
+
             Text(
                 text = stopDesc,
                 style = MaterialTheme.typography.bodySmall,
@@ -1013,36 +1373,22 @@ private fun StopItemRow(
             )
         }
 
-        if (isReached) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(RoamlySuccess.copy(alpha = 0.15f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "Reached",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = RoamlySuccess,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
-        } else if (isActive) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(RoamlyPrimary.copy(alpha = 0.15f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "En Route",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = RoamlyPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
+        if (isReached || isActive) {
+            Spacer(modifier = Modifier.width(6.dp))
+
+            StatusChip(
+                text = if (isReached) "Reached" else "En Route",
+                backgroundColor = if (isReached) {
+                    RoamlySuccess.copy(alpha = 0.15f)
+                } else {
+                    RoamlyPrimary.copy(alpha = 0.15f)
+                },
+                textColor = if (isReached) {
+                    RoamlySuccess
+                } else {
+                    RoamlyPrimary
+                }
+            )
         }
     }
 }

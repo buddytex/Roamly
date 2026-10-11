@@ -131,7 +131,7 @@ fun GuideDashboardScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Welcome, Alex. Here's your trip overview.",
+                        text = "Welcome. Here's your trip overview.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = RoamlyTextSecondary
                     )
