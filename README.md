@@ -16,7 +16,7 @@ Built for the **Layover 2026 Hackathon — Travel & Tourism Track**
 
 <br/>
 
-<img src="docs/images/roamly-hero.png" alt="Roamly Panoramic Hero - Jewel Changi Canopy" width="100%" style="border-radius: 12px; max-height: 440px; object-fit: cover; box-shadow: 0 8px 24px rgba(0,0,0,0.12);" />
+<img src="docs/images/roamly-hero.png" alt="Roamly Panoramic Brand Banner - Your journey, reimagined." width="100%" style="border-radius: 12px; max-height: 440px; object-fit: cover; box-shadow: 0 8px 24px rgba(0,0,0,0.12);" />
 
 <br/>
 
