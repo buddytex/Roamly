@@ -91,6 +91,17 @@ fun TinkerspaceDemoScreen(
 
     val locationInfo by locationManager.locationInfo.collectAsState()
 
+    androidx.compose.runtime.LaunchedEffect(locationInfo.hasPermission, locationInfo.isMonitoring) {
+        if (workflowState != TinkerspaceWorkflowState.UPCOMING && workflowState != TinkerspaceWorkflowState.COMPLETED) {
+            if (!locationInfo.hasPermission) {
+                repository.recordLocationAvailability(false, "Location permission missing")
+            } else if (locationInfo.isMonitoring) {
+                repository.recordLocationAvailability(true, "GPS location active")
+            }
+        }
+    }
+
+
     var showOutdoorArrivalDialog by remember {
         mutableStateOf(false)
     }

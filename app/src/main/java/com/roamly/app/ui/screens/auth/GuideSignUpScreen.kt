@@ -122,13 +122,13 @@ fun GuideSignUpScreen(
 
         // Branding & Header
         AuthHeader(
-            title = "Request Guide Access",
+            title = "Create Guide Account",
             subtitle = "Register as a trip organiser or licensed tour guide."
         )
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Approval Policy Notice Banner
+        // Guide Features Notice Banner
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -146,7 +146,7 @@ fun GuideSignUpScreen(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Guide accounts require administrative approval before trip management tools and traveller rosters become accessible.",
+                    text = "Guide accounts have direct access to trip management tools, itinerary planning, and traveller rosters.",
                     style = MaterialTheme.typography.bodySmall,
                     color = RoamlyTextPrimary,
                     lineHeight = 18.sp
@@ -252,7 +252,8 @@ fun GuideSignUpScreen(
                     email = email,
                     password = password,
                     confirmPassword = confirmPassword,
-                    role = UserRole.GUIDE
+                    role = UserRole.GUIDE,
+                    onSuccess = onNavigateToSignIn
                 )
             },
             modifier = Modifier
@@ -273,7 +274,7 @@ fun GuideSignUpScreen(
                 )
             } else {
                 Text(
-                    text = "Submit Access Request",
+                    text = "Create Guide Account",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )

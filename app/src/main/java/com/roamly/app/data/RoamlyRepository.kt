@@ -4,22 +4,40 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.roamly.app.auth.data.SupabaseAuthRepository
+import com.roamly.app.auth.network.DemoEventDto
+import com.roamly.app.auth.network.DemoSessionDto
 import com.roamly.app.model.ChatMessage
 import com.roamly.app.model.ChatSender
 import com.roamly.app.model.ChecklistCategory
 import com.roamly.app.model.ChecklistItem
+import com.roamly.app.model.DemoEventRecord
+import com.roamly.app.model.DemoStatus
 import com.roamly.app.model.DestinationItem
-import com.roamly.app.model.TravellerRecord
 import com.roamly.app.model.TinkerspaceWorkflowState
+import com.roamly.app.model.TravellerDemoStatus
+import com.roamly.app.model.TravellerRecord
 import com.roamly.app.model.Trip
 import com.roamly.app.model.TripStatus
 import com.roamly.app.model.UserRole
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 class RoamlyRepository private constructor(context: Context) {
+
+    private val appContext: Context = context.applicationContext
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("roamly_app_prefs", Context.MODE_PRIVATE)
@@ -55,9 +73,15 @@ class RoamlyRepository private constructor(context: Context) {
     private val _tinkerspaceBelongingsCheckedTime = MutableStateFlow<Long>(0L)
     val tinkerspaceBelongingsCheckedTime: StateFlow<Long> = _tinkerspaceBelongingsCheckedTime.asStateFlow()
 
+    private val _activeDemoStatuses = MutableStateFlow<List<TravellerDemoStatus>>(emptyList())
+    val activeDemoStatuses: StateFlow<List<TravellerDemoStatus>> = _activeDemoStatuses.asStateFlow()
+
+    private var lastRecordedEventType: String? = null
+
     init {
         loadData()
     }
+
 
     private fun loadData() {
         // Load Selected Role
@@ -153,21 +177,65 @@ class RoamlyRepository private constructor(context: Context) {
             _chatMessages.value = createInitialChat()
         }
 
-        // Load Travellers
+        // Load Travellers from local cache (empty initially if no real travellers fetched yet)
         try {
             val travellersJson = prefs.getString(KEY_TRAVELLERS, null)
             if (travellersJson != null) {
                 val type = object : TypeToken<List<TravellerRecord>>() {}.type
                 val loaded: List<TravellerRecord>? = gson.fromJson(travellersJson, type)
-                _travellers.value = if (!loaded.isNullOrEmpty()) loaded else SampleData.sampleTravellers
+                _travellers.value = loaded ?: emptyList()
             } else {
-                _travellers.value = SampleData.sampleTravellers
+                _travellers.value = emptyList()
                 saveTravellers(_travellers.value)
             }
         } catch (e: Exception) {
-            _travellers.value = SampleData.sampleTravellers
+            _travellers.value = emptyList()
+        }
+
+        // Load Demo Statuses
+        try {
+            val demoJson = prefs.getString(KEY_DEMO_STATUSES, null)
+            if (demoJson != null) {
+                val type = object : TypeToken<List<TravellerDemoStatus>>() {}.type
+                val loaded: List<TravellerDemoStatus>? = gson.fromJson(demoJson, type)
+                if (!loaded.isNullOrEmpty()) {
+                    _activeDemoStatuses.value = loaded
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore parse errors
+        }
+
+        // If local traveller starts the demo on this device, initialize their session with their real user info
+        if (_activeDemoStatuses.value.isEmpty() && _tinkerspaceWorkflowState.value != TinkerspaceWorkflowState.UPCOMING) {
+            val (travellerId, travellerName) = getCurrentTravellerInfo()
+            val initialDemoStatus = when (_tinkerspaceWorkflowState.value) {
+                TinkerspaceWorkflowState.UPCOMING -> DemoStatus.NOT_STARTED
+                TinkerspaceWorkflowState.IN_PROGRESS -> DemoStatus.ACTIVE
+                TinkerspaceWorkflowState.OUTDOOR_STOP_REACHED -> DemoStatus.DEPARTED
+                TinkerspaceWorkflowState.INDOOR_STOP_REACHED -> DemoStatus.RETURNED
+                TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK,
+                TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION -> DemoStatus.AWAITING_BELONGINGS_CHECK
+                TinkerspaceWorkflowState.COMPLETED -> DemoStatus.COMPLETED
+            }
+            val initial = TravellerDemoStatus(
+                travellerId = travellerId,
+                travellerName = travellerName,
+                tripId = "trip_tinkerspace_demo",
+                tripName = "Outside Tinkerspace",
+                status = initialDemoStatus,
+                isLocationAvailable = true,
+                lastEvent = "Demo in state ${initialDemoStatus.displayName}",
+                lastEventTimestamp = System.currentTimeMillis(),
+                isBelongingsChecked = _tinkerspaceBelongingsCheckedTime.value > 0L,
+                belongingsCheckedTime = if (_tinkerspaceBelongingsCheckedTime.value > 0L) _tinkerspaceBelongingsCheckedTime.value else null,
+                isCompleted = initialDemoStatus == DemoStatus.COMPLETED
+            )
+            _activeDemoStatuses.value = listOf(initial)
+            saveDemoStatuses(_activeDemoStatuses.value)
         }
     }
+
 
     private fun createInitialChat(): List<ChatMessage> {
         return listOf(
@@ -465,7 +533,7 @@ class RoamlyRepository private constructor(context: Context) {
         saveTrips(_trips.value)
         _checklist.value = SampleData.sampleChecklist
         saveChecklist(_checklist.value)
-        _travellers.value = SampleData.sampleTravellers
+        _travellers.value = emptyList()
         saveTravellers(_travellers.value)
         _chatMessages.value = createInitialChat()
         saveChat(_chatMessages.value)
@@ -482,6 +550,11 @@ class RoamlyRepository private constructor(context: Context) {
         _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.IN_PROGRESS
         prefs.edit().putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.IN_PROGRESS.name).apply()
         updateTripStatus("trip_tinkerspace_demo", TripStatus.IN_PROGRESS)
+        recordDemoTransition(
+            status = DemoStatus.ACTIVE,
+            eventType = "DEMO_STARTED",
+            description = "Traveller started Outside Tinkerspace demo"
+        )
     }
 
     fun reachTinkerspaceOutdoorStop(isSimulated: Boolean = false) {
@@ -494,6 +567,12 @@ class RoamlyRepository private constructor(context: Context) {
                 .putBoolean(KEY_TINKERSPACE_IS_SIMULATED, isSimulated)
                 .apply()
             markDestinationCompleted("trip_tinkerspace_demo", "dest_tinker_outside")
+            recordDemoTransition(
+                status = DemoStatus.DEPARTED,
+                eventType = "DEPARTED",
+                description = "Traveller departed Tinkerspace (Outdoor stop reached)",
+                departureTime = System.currentTimeMillis()
+            )
         }
     }
 
@@ -506,12 +585,23 @@ class RoamlyRepository private constructor(context: Context) {
                 .putBoolean(KEY_TINKERSPACE_IS_SIMULATED, isSimulated)
                 .apply()
             markDestinationCompleted("trip_tinkerspace_demo", "dest_tinker_inside")
+            recordDemoTransition(
+                status = DemoStatus.RETURNED,
+                eventType = "RETURNED",
+                description = "Traveller returned to Tinkerspace (Indoor stop reached)",
+                returnTime = System.currentTimeMillis()
+            )
         }
     }
 
     fun proceedToBelongingsCheck() {
         _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK
         prefs.edit().putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.AWAITING_BELONGINGS_CHECK.name).apply()
+        recordDemoTransition(
+            status = DemoStatus.AWAITING_BELONGINGS_CHECK,
+            eventType = "AWAITING_BELONGINGS_CHECK",
+            description = "Traveller arrived back and entered belongings check"
+        )
     }
 
     fun confirmTinkerspaceBelongingsChecked(timestamp: Long = System.currentTimeMillis()) {
@@ -521,18 +611,33 @@ class RoamlyRepository private constructor(context: Context) {
             .putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.AWAITING_FINAL_CONFIRMATION.name)
             .putLong(KEY_TINKERSPACE_BELONGINGS_TIME, timestamp)
             .apply()
+        recordDemoTransition(
+            status = DemoStatus.AWAITING_BELONGINGS_CHECK,
+            eventType = "BELONGINGS_CHECKED",
+            description = "Traveller verified all personal belongings",
+            belongingsChecked = true,
+            belongingsCheckedTime = timestamp
+        )
     }
 
     fun endTinkerspaceTrip() {
         _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.COMPLETED
         prefs.edit().putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.COMPLETED.name).apply()
         updateTripStatus("trip_tinkerspace_demo", TripStatus.COMPLETED)
+        recordDemoTransition(
+            status = DemoStatus.COMPLETED,
+            eventType = "TRIP_COMPLETED",
+            description = "Traveller explicitly completed and ended the trip",
+            isCompleted = true,
+            completedTime = System.currentTimeMillis()
+        )
     }
 
     fun resetTinkerspaceDemo() {
         _tinkerspaceWorkflowState.value = TinkerspaceWorkflowState.UPCOMING
         _tinkerspaceIsSimulated.value = false
         _tinkerspaceBelongingsCheckedTime.value = 0L
+        lastRecordedEventType = null
         prefs.edit()
             .putString(KEY_TINKERSPACE_WORKFLOW_STATE, TinkerspaceWorkflowState.UPCOMING.name)
             .putBoolean(KEY_TINKERSPACE_IS_SIMULATED, false)
@@ -551,7 +656,362 @@ class RoamlyRepository private constructor(context: Context) {
         }
         _trips.value = updatedTrips
         saveTrips(updatedTrips)
+
+        recordDemoTransition(
+            status = DemoStatus.NOT_STARTED,
+            eventType = "DEMO_RESET",
+            description = "Demo session reset to initial state",
+            isCompleted = false,
+            belongingsChecked = false
+        )
     }
+
+    fun recordLocationAvailability(available: Boolean, message: String = "") {
+        val currentStatus = _activeDemoStatuses.value.firstOrNull()?.status ?: DemoStatus.NOT_STARTED
+        if (currentStatus == DemoStatus.NOT_STARTED || currentStatus == DemoStatus.COMPLETED) {
+            return
+        }
+        val eventType = if (available) "LOCATION_RESTORED" else "LOCATION_UNAVAILABLE"
+        val desc = if (message.isNotBlank()) message else if (available) "GPS location tracking active" else "GPS location tracking unavailable"
+        val newStatus = if (!available && currentStatus != DemoStatus.COMPLETED) DemoStatus.LOCATION_UNAVAILABLE else currentStatus
+        recordDemoTransition(
+            status = newStatus,
+            eventType = eventType,
+            description = desc,
+            locationAvailable = available
+        )
+    }
+
+    fun recordDemoTransition(
+        status: DemoStatus,
+        eventType: String,
+        description: String,
+        locationAvailable: Boolean = true,
+        departureTime: Long? = null,
+        returnTime: Long? = null,
+        belongingsChecked: Boolean? = null,
+        belongingsCheckedTime: Long? = null,
+        isCompleted: Boolean? = null,
+        completedTime: Long? = null
+    ) {
+        val (travellerId, travellerName) = getCurrentTravellerInfo()
+        val currentList = _activeDemoStatuses.value.toMutableList()
+        val existingIndex = currentList.indexOfFirst { it.travellerId == travellerId }
+        val existing = if (existingIndex >= 0) currentList[existingIndex] else null
+
+        // Duplicate GPS/transition callback deduplication
+        if (lastRecordedEventType == eventType && existing?.status == status) {
+            return
+        }
+        lastRecordedEventType = eventType
+
+        val now = System.currentTimeMillis()
+        val newEvent = DemoEventRecord(
+            eventType = eventType,
+            description = description,
+            timestamp = now
+        )
+        val updatedHistory = if (existing != null) {
+            listOf(newEvent) + existing.eventHistory.take(29)
+        } else {
+            listOf(newEvent)
+        }
+
+        val updatedStatus = TravellerDemoStatus(
+            travellerId = travellerId,
+            travellerName = travellerName,
+            tripId = "trip_tinkerspace_demo",
+            tripName = "Outside Tinkerspace",
+            status = status,
+            isLocationAvailable = locationAvailable,
+            lastEvent = description,
+            lastEventTimestamp = now,
+            departureTime = departureTime ?: existing?.departureTime,
+            returnTime = returnTime ?: existing?.returnTime,
+            isBelongingsChecked = belongingsChecked ?: existing?.isBelongingsChecked ?: false,
+            belongingsCheckedTime = belongingsCheckedTime ?: existing?.belongingsCheckedTime,
+            isCompleted = isCompleted ?: existing?.isCompleted ?: false,
+            completedTime = completedTime ?: existing?.completedTime,
+            eventHistory = updatedHistory
+        )
+
+        if (existingIndex >= 0) {
+            currentList[existingIndex] = updatedStatus
+        } else {
+            currentList.add(0, updatedStatus)
+        }
+        _activeDemoStatuses.value = currentList
+        saveDemoStatuses(currentList)
+
+        // Asynchronously sync to Supabase if signed in and backend configured
+        repositoryScope.launch {
+            syncDemoSessionToBackend(updatedStatus, newEvent)
+        }
+    }
+
+    private fun getCurrentTravellerInfo(): Pair<String, String> {
+        return try {
+            val authRepo = SupabaseAuthRepository.getInstance(appContext)
+            val user = authRepo.currentUser.value
+            if (user != null) {
+                val name = user.fullName.trim().ifBlank {
+                    user.email.substringBefore('@').ifBlank { "Registered Traveller" }
+                }
+                user.id to name
+            } else {
+                val cached = prefs.getString(KEY_USER_ID, null)
+                val id = cached ?: "traveller"
+                id to "Registered Traveller"
+            }
+        } catch (_: Exception) {
+            "traveller" to "Registered Traveller"
+        }
+    }
+
+    private suspend fun syncDemoSessionToBackend(session: TravellerDemoStatus, event: DemoEventRecord) {
+        try {
+            val authRepo = SupabaseAuthRepository.getInstance(appContext)
+            val client = authRepo.getActiveNetworkClient() ?: return
+            val user = authRepo.currentUser.value ?: return
+
+            val actualTravellerId = user.id
+            val tripUuid = "00000000-0000-0000-0000-000000000002"
+
+            val sessionDto = DemoSessionDto(
+                tripId = tripUuid,
+                tripSlug = "trip_tinkerspace_demo",
+                travellerId = actualTravellerId,
+                travellerName = session.travellerName,
+                status = session.status.name,
+                locationAvailable = session.isLocationAvailable,
+                lastEvent = session.lastEvent,
+                lastEventTime = session.lastEventTimestamp.toIso8601(),
+                departureTime = session.departureTime?.toIso8601(),
+                returnTime = session.returnTime?.toIso8601(),
+                belongingsChecked = session.isBelongingsChecked,
+                belongingsCheckedTime = session.belongingsCheckedTime?.toIso8601(),
+                isCompleted = session.isCompleted,
+                completedTime = session.completedTime?.toIso8601(),
+                updatedAt = System.currentTimeMillis().toIso8601()
+            )
+
+            client.postgrestApi.upsertDemoSession(sessionDto)
+
+            val eventDto = DemoEventDto(
+                tripId = tripUuid,
+                travellerId = actualTravellerId,
+                eventType = event.eventType,
+                description = event.description,
+                eventTimestamp = event.timestamp.toIso8601()
+            )
+            client.postgrestApi.insertDemoEvent(eventDto)
+        } catch (_: Exception) {
+            // Gracefully ignore network errors; local state remains consistent
+        }
+    }
+
+    suspend fun fetchDemoSessions(): Result<List<TravellerDemoStatus>> = withContext(Dispatchers.IO) {
+        try {
+            val authRepo = SupabaseAuthRepository.getInstance(appContext)
+            val client = authRepo.getActiveNetworkClient()
+            if (client == null) {
+                return@withContext Result.success(_activeDemoStatuses.value)
+            }
+
+            val response = client.postgrestApi.getDemoSessions(tripSlug = "trip_tinkerspace_demo")
+            if (response.isSuccessful && response.body() != null) {
+                val dtos = response.body()!!
+                val mapped = dtos.map { dto ->
+                    val statusEnum = try {
+                        DemoStatus.valueOf(dto.status)
+                    } catch (e: Exception) {
+                        DemoStatus.ACTIVE
+                    }
+                    val existing = _activeDemoStatuses.value.find { it.travellerId == dto.travellerId }
+                    TravellerDemoStatus(
+                        travellerId = dto.travellerId,
+                        travellerName = dto.travellerName,
+                        tripId = "trip_tinkerspace_demo",
+                        tripName = "Outside Tinkerspace",
+                        status = statusEnum,
+                        isLocationAvailable = dto.locationAvailable,
+                        lastEvent = dto.lastEvent ?: "Status updated",
+                        lastEventTimestamp = dto.lastEventTime.parseIso8601ToEpoch() ?: System.currentTimeMillis(),
+                        departureTime = dto.departureTime.parseIso8601ToEpoch(),
+                        returnTime = dto.returnTime.parseIso8601ToEpoch(),
+                        isBelongingsChecked = dto.belongingsChecked,
+                        belongingsCheckedTime = dto.belongingsCheckedTime.parseIso8601ToEpoch(),
+                        isCompleted = dto.isCompleted,
+                        completedTime = dto.completedTime.parseIso8601ToEpoch(),
+                        eventHistory = existing?.eventHistory ?: emptyList()
+                    )
+                }
+
+                _activeDemoStatuses.value = mapped
+                saveDemoStatuses(mapped)
+                return@withContext Result.success(_activeDemoStatuses.value)
+            } else {
+                return@withContext Result.failure(Exception("Failed to load demo sessions: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            return@withContext Result.failure(e)
+        }
+    }
+
+    suspend fun fetchDemoEvents(travellerId: String): List<DemoEventRecord> = withContext(Dispatchers.IO) {
+        try {
+            val authRepo = SupabaseAuthRepository.getInstance(appContext)
+            val client = authRepo.getActiveNetworkClient()
+            if (client != null) {
+                val response = client.postgrestApi.getDemoEvents(travellerIdFilter = "eq.$travellerId")
+                if (response.isSuccessful && response.body() != null) {
+                    val remoteEvents = response.body()!!.map { dto ->
+                        DemoEventRecord(
+                            id = dto.id ?: UUID.randomUUID().toString(),
+                            eventType = dto.eventType,
+                            description = dto.description,
+                            timestamp = dto.eventTimestamp.parseIso8601ToEpoch() ?: System.currentTimeMillis()
+                        )
+                    }
+                    if (remoteEvents.isNotEmpty()) {
+                        val currentList = _activeDemoStatuses.value.toMutableList()
+                        val idx = currentList.indexOfFirst { it.travellerId == travellerId }
+                        if (idx >= 0) {
+                            currentList[idx] = currentList[idx].copy(eventHistory = remoteEvents)
+                            _activeDemoStatuses.value = currentList
+                            saveDemoStatuses(currentList)
+                        }
+                        return@withContext remoteEvents
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return@withContext _activeDemoStatuses.value.find { it.travellerId == travellerId }?.eventHistory ?: emptyList()
+    }
+
+    suspend fun fetchTravellers(guideId: String? = null): Result<List<TravellerRecord>> = withContext(Dispatchers.IO) {
+        try {
+            val authRepo = SupabaseAuthRepository.getInstance(appContext)
+            val client = authRepo.getActiveNetworkClient()
+            if (client == null) {
+                return@withContext Result.success(_travellers.value)
+            }
+
+            // 1. Fetch traveller profiles (PostgREST RLS enforces that guides only see authorized travellers)
+            val profilesResponse = client.postgrestApi.getTravellerProfiles()
+            if (!profilesResponse.isSuccessful) {
+                return@withContext Result.failure(
+                    Exception("Failed to load travellers: HTTP ${profilesResponse.code()} ${profilesResponse.message()}")
+                )
+            }
+
+            val profileDtos = profilesResponse.body() ?: emptyList()
+            // Filter strictly to accounts classified as TRAVELLER and remove any duplicates
+            val travellerProfiles = profileDtos
+                .filter { it.role.equals("traveller", ignoreCase = true) }
+                .distinctBy { it.id }
+
+            // 2. Fetch trip memberships to correlate with assigned trips
+            val tripMembersMap = mutableMapOf<String, String>()
+            try {
+                val membersResp = client.postgrestApi.getTripMembers()
+                if (membersResp.isSuccessful && membersResp.body() != null) {
+                    membersResp.body()!!.forEach { tm ->
+                        tripMembersMap[tm.userId] = tm.tripId
+                    }
+                }
+            } catch (_: Exception) {
+                // Table may be empty
+            }
+
+            // 3. Fetch demo sessions to get verified real-time demo status
+            val demoSessionsMap = mutableMapOf<String, DemoSessionDto>()
+            try {
+                val sessionsResp = client.postgrestApi.getDemoSessions()
+                if (sessionsResp.isSuccessful && sessionsResp.body() != null) {
+                    sessionsResp.body()!!.forEach { ds ->
+                        demoSessionsMap[ds.travellerId] = ds
+                    }
+                }
+            } catch (_: Exception) {
+                // Non-critical if offline
+            }
+
+            // 4. Map each registered traveller profile into a TravellerRecord
+            val mappedTravellers = travellerProfiles.map { profile ->
+                val assignedTripUuid = tripMembersMap[profile.id]
+                val hasTrip = assignedTripUuid != null
+                val assignedTrip = if (assignedTripUuid != null) {
+                    _trips.value.find { it.id == assignedTripUuid || it.id == "trip_singapore_2026" }
+                } else null
+
+                val demo = demoSessionsMap[profile.id]
+                val demoStatus = if (demo != null) {
+                    try {
+                        DemoStatus.valueOf(demo.status)
+                    } catch (_: Exception) {
+                        DemoStatus.ACTIVE
+                    }
+                } else {
+                    DemoStatus.NOT_STARTED
+                }
+
+                // Strict verified monitoring rule:
+                // Only mark location monitoring active if demo is ACTIVE or DEPARTED and locationAvailable is verified true.
+                val isMonitoringActive = (demoStatus == DemoStatus.ACTIVE || demoStatus == DemoStatus.DEPARTED) &&
+                        (demo?.locationAvailable == true)
+
+                val overallStatus = when {
+                    demoStatus == DemoStatus.COMPLETED -> "Completed"
+                    demoStatus == DemoStatus.AWAITING_BELONGINGS_CHECK -> "Awaiting Belongings Check"
+                    demoStatus == DemoStatus.RETURNED -> "Returned"
+                    demoStatus == DemoStatus.DEPARTED -> if (demo?.locationAvailable == false) "Location Unavailable" else "Outside Tinkerspace"
+                    demoStatus == DemoStatus.ACTIVE -> if (demo?.locationAvailable == false) "Location Unavailable" else "Active"
+                    hasTrip -> "Trip Selected"
+                    else -> "Registered"
+                }
+
+                val displayName = profile.fullName?.trim()?.ifBlank { null }
+                    ?: profile.email?.substringBefore('@')?.ifBlank { null }
+                    ?: "Registered Traveller"
+
+                val assignedTripId = assignedTrip?.id ?: assignedTripUuid ?: if (hasTrip) "trip_singapore_2026" else ""
+                val assignedTripName = assignedTrip?.title ?: if (hasTrip) "Singapore Explorer" else "No Trip Selected"
+
+                TravellerRecord(
+                    id = profile.id,
+                    name = displayName,
+                    assignedTripId = assignedTripId,
+                    assignedTripName = assignedTripName,
+                    preparationStatus = overallStatus,
+                    packedItemsCount = 0,
+                    totalItemsCount = 0,
+                    visitedActivitiesCount = 0,
+                    totalActivitiesCount = 0,
+                    contactPhone = profile.phone ?: "",
+                    email = profile.email,
+                    overallStatus = overallStatus,
+                    demoStatus = demoStatus,
+                    isLocationMonitoringActive = isMonitoringActive,
+                    lastRecordedEvent = demo?.lastEvent,
+                    lastEventTimestamp = demo?.lastEventTime.parseIso8601ToEpoch(),
+                    departureTimestamp = demo?.departureTime.parseIso8601ToEpoch(),
+                    returnTimestamp = demo?.returnTime.parseIso8601ToEpoch(),
+                    isBelongingsChecked = demo?.belongingsChecked ?: false,
+                    isTripCompleted = demo?.isCompleted ?: false,
+                    completedTimestamp = demo?.completedTime.parseIso8601ToEpoch()
+                )
+            }
+
+            _travellers.value = mappedTravellers
+            saveTravellers(mappedTravellers)
+            Result.success(mappedTravellers)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
 
     private fun markDestinationCompleted(tripId: String, destId: String) {
         val updated = _trips.value.map { trip ->
@@ -587,6 +1047,31 @@ class RoamlyRepository private constructor(context: Context) {
         prefs.edit().putString(KEY_TRAVELLERS, gson.toJson(travellers)).apply()
     }
 
+    private fun saveDemoStatuses(statuses: List<TravellerDemoStatus>) {
+        prefs.edit().putString(KEY_DEMO_STATUSES, gson.toJson(statuses)).apply()
+    }
+
+    private val isoDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+
+    private fun Long.toIso8601(): String = synchronized(isoDateFormat) {
+        isoDateFormat.format(Date(this))
+    }
+
+    private fun String?.parseIso8601ToEpoch(): Long? {
+        if (this.isNullOrBlank()) return null
+        return try {
+            java.time.Instant.parse(this).toEpochMilli()
+        } catch (_: Exception) {
+            try {
+                synchronized(isoDateFormat) { isoDateFormat.parse(this)?.time }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     companion object {
         private const val KEY_ROLE = "key_role"
         private const val KEY_TRIPS = "key_trips"
@@ -597,6 +1082,8 @@ class RoamlyRepository private constructor(context: Context) {
         private const val KEY_TINKERSPACE_WORKFLOW_STATE = "key_tinkerspace_workflow_state"
         private const val KEY_TINKERSPACE_IS_SIMULATED = "key_tinkerspace_is_simulated"
         private const val KEY_TINKERSPACE_BELONGINGS_TIME = "key_tinkerspace_belongings_time"
+        private const val KEY_DEMO_STATUSES = "key_demo_statuses"
+        private const val KEY_USER_ID = "key_user_id"
 
         @Volatile
         private var instance: RoamlyRepository? = null

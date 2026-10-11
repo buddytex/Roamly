@@ -59,18 +59,74 @@ class SupabaseNetworkClient(
 
     fun parseErrorMessage(response: Response<*>): String {
         return try {
-            val errorBody = response.errorBody()?.string()
-            if (!errorBody.isNullOrBlank()) {
-                val parsed = gson.fromJson(errorBody, SupabaseErrorResponse::class.java)
-                when {
-                    !parsed.errorDescription.isNullOrBlank() -> sanitizeMessage(parsed.errorDescription)
-                    !parsed.message.isNullOrBlank() -> sanitizeMessage(parsed.message)
-                    !parsed.msg.isNullOrBlank() -> sanitizeMessage(parsed.msg)
-                    !parsed.error.isNullOrBlank() -> sanitizeMessage(parsed.error)
-                    else -> "Authentication failed (${response.code()}). Please try again."
+            val statusCode = response.code()
+            val retryAfterHeader = response.headers().get("Retry-After")?.trim()
+            val retryAfterSeconds = retryAfterHeader?.toLongOrNull()
+
+            val waitGuidance = when {
+                retryAfterSeconds != null && retryAfterSeconds > 60 -> {
+                    val minutes = (retryAfterSeconds + 59) / 60
+                    "Please wait $minutes minute${if (minutes > 1L) "s" else ""} before trying again."
                 }
+                retryAfterSeconds != null && retryAfterSeconds > 0 -> {
+                    "Please wait $retryAfterSeconds seconds before trying again."
+                }
+                else -> null
+            }
+
+            val errorBody = response.errorBody()?.string()
+            val parsed = if (!errorBody.isNullOrBlank()) {
+                try {
+                    gson.fromJson(errorBody, SupabaseErrorResponse::class.java)
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+
+            val rawMessage = parsed?.errorDescription
+                ?: parsed?.message
+                ?: parsed?.msg
+                ?: parsed?.error
+                ?: ""
+
+            val errorCode = parsed?.errorCode ?: ""
+
+            val isRateLimit = statusCode == 429 ||
+                rawMessage.contains("rate limit", ignoreCase = true) ||
+                rawMessage.contains("rate_limit", ignoreCase = true) ||
+                rawMessage.contains("over_email_send_rate_limit", ignoreCase = true) ||
+                errorCode.contains("rate_limit", ignoreCase = true) ||
+                errorCode.contains("over_email_send_rate_limit", ignoreCase = true)
+
+            if (isRateLimit) {
+                val isEmailRateLimit = errorCode.contains("email", ignoreCase = true) ||
+                    rawMessage.contains("email", ignoreCase = true) ||
+                    errorCode.contains("over_email_send_rate_limit", ignoreCase = true)
+
+                return when {
+                    isEmailRateLimit -> {
+                        if (waitGuidance != null) {
+                            "Email delivery limit reached. $waitGuidance"
+                        } else {
+                            "Email delivery rate limit reached. Please wait a few minutes before trying again."
+                        }
+                    }
+                    waitGuidance != null -> {
+                        "Too many requests. $waitGuidance"
+                    }
+                    rawMessage.contains("once every", ignoreCase = true) -> {
+                        "For security purposes, please wait a moment before trying again."
+                    }
+                    else -> {
+                        "Too many requests. Please wait a moment and try again."
+                    }
+                }
+            }
+
+            if (rawMessage.isNotBlank()) {
+                sanitizeMessage(rawMessage)
             } else {
-                "Request failed with status code ${response.code()}."
+                "Request failed with status code $statusCode."
             }
         } catch (e: Exception) {
             "An unexpected network error occurred. Please check your connection."
@@ -84,7 +140,13 @@ class SupabaseNetworkClient(
                 "Invalid email or password. Please check your credentials."
             lower.contains("email not confirmed") ->
                 "Your email address has not been verified. Please check your inbox for the confirmation link."
-            lower.contains("user already registered") ->
+            lower.contains("user already registered") ||
+            lower.contains("already registered") ||
+            lower.contains("user_already_exists") ||
+            lower.contains("user already exists") ||
+            lower.contains("email address already in use") ||
+            lower.contains("email already exists") ||
+            lower.contains("email already in use") ->
                 "An account with this email address already exists. Please sign in instead."
             lower.contains("password should be at least") ->
                 "Password must be at least 6 characters long."

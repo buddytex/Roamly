@@ -51,6 +51,7 @@ import com.roamly.app.auth.ui.AuthViewModel
 import com.roamly.app.model.UserRole
 import com.roamly.app.ui.components.AuthErrorBanner
 import com.roamly.app.ui.components.AuthHeader
+import com.roamly.app.ui.components.AuthSuccessBanner
 import com.roamly.app.ui.components.AuthTextField
 import com.roamly.app.ui.components.GoogleSignInButton
 import com.roamly.app.ui.theme.RoamlyBackground
@@ -62,6 +63,7 @@ import com.roamly.app.ui.theme.RoamlyTextSecondary
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.runtime.LaunchedEffect
 
 @Composable
 fun TravellerSignInScreen(
@@ -75,9 +77,17 @@ fun TravellerSignInScreen(
     val context = LocalContext.current
     val authState by authViewModel.authState.collectAsState()
     val formErrors by authViewModel.formErrors.collectAsState()
+    val accountCreatedSuccess by authViewModel.accountCreatedSuccess.collectAsState()
+    val lastRegisteredEmail by authViewModel.lastRegisteredEmail.collectAsState()
 
-    var email by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(lastRegisteredEmail ?: "") }
     var password by remember { mutableStateOf("") }
+
+    LaunchedEffect(lastRegisteredEmail) {
+        if (!lastRegisteredEmail.isNullOrBlank() && email.isBlank()) {
+            email = lastRegisteredEmail!!
+        }
+    }
 
     val isLoading = authState is AuthState.SigningIn || authState is AuthState.Initializing
     val scrollState = rememberScrollState()
@@ -123,6 +133,12 @@ fun TravellerSignInScreen(
         )
 
         Spacer(modifier = Modifier.height(24.dp))
+
+        // Success Banner
+        if (accountCreatedSuccess != null) {
+            AuthSuccessBanner(message = accountCreatedSuccess!!)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // Error Banner
         if (formErrors.generalError != null) {
@@ -225,6 +241,7 @@ fun TravellerSignInScreen(
         // Primary Sign In Button
         Button(
             onClick = {
+                authViewModel.clearAccountCreatedSuccess()
                 authViewModel.signIn(email, password, UserRole.TRAVELLER)
             },
             modifier = Modifier

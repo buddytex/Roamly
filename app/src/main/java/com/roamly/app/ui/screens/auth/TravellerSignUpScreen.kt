@@ -217,7 +217,8 @@ fun TravellerSignUpScreen(
                     email = email,
                     password = password,
                     confirmPassword = confirmPassword,
-                    role = UserRole.TRAVELLER
+                    role = UserRole.TRAVELLER,
+                    onSuccess = onNavigateToSignIn
                 )
             },
             modifier = Modifier

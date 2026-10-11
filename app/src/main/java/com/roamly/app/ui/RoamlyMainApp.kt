@@ -53,7 +53,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-import com.roamly.app.auth.model.ApprovalStatus
 import com.roamly.app.auth.model.AuthState
 import com.roamly.app.auth.model.AuthUser
 import com.roamly.app.auth.ui.AuthViewModel
@@ -71,7 +70,6 @@ import com.roamly.app.ui.screens.ProfileScreen
 import com.roamly.app.ui.screens.RoleSelectionScreen
 
 import com.roamly.app.ui.screens.auth.EmailVerificationNoticeScreen
-import com.roamly.app.ui.screens.auth.GuidePendingApprovalScreen
 import com.roamly.app.ui.screens.auth.GuideSignInScreen
 import com.roamly.app.ui.screens.auth.GuideSignUpScreen
 import com.roamly.app.ui.screens.auth.TravellerForgotPasswordScreen
@@ -190,35 +188,16 @@ fun RoamlyMainApp(
 
 
         // ---------------------------------------------------------
-        // GUIDE APPROVAL
-        // ---------------------------------------------------------
-
-        is AuthState.AwaitingGuideApproval -> {
-            GuidePendingApprovalScreen(
-                user = state.user,
-                onRefreshStatus = {
-                    authViewModel.restoreSession()
-                },
-                onSignOut = {
-                    authViewModel.signOut()
-                }
-            )
-        }
-
-
-        // ---------------------------------------------------------
         // AUTHENTICATED USER ROUTING
         // ---------------------------------------------------------
 
         is AuthState.Authenticated -> {
             val user = state.user
 
-            when {
+            when (user.role) {
 
-                // Approved guides must enter the Guide portal.
-                user.role == UserRole.GUIDE &&
-                    user.approvalStatus == ApprovalStatus.APPROVED -> {
-
+                // Guide accounts open GuideNavigationHost directly
+                UserRole.GUIDE -> {
                     GuideNavigationHost(
                         repository = repository,
                         currentUser = user,
@@ -228,26 +207,8 @@ fun RoamlyMainApp(
                     )
                 }
 
-
-                // Pending guides must not enter either portal.
-                user.role == UserRole.GUIDE &&
-                    user.approvalStatus == ApprovalStatus.PENDING -> {
-
-                    GuidePendingApprovalScreen(
-                        user = user,
-                        onRefreshStatus = {
-                            authViewModel.restoreSession()
-                        },
-                        onSignOut = {
-                            authViewModel.signOut()
-                        }
-                    )
-                }
-
-
-                // Travellers enter the Traveller portal.
-                user.role == UserRole.TRAVELLER -> {
-
+                // Traveller accounts open TravellerNavigationHost directly
+                UserRole.TRAVELLER -> {
                     TravellerNavigationHost(
                         repository = repository,
                         currentUser = user,
@@ -256,48 +217,6 @@ fun RoamlyMainApp(
                         }
                     )
                 }
-
-
-                // Rejected guides must never enter the Guide portal.
-                user.role == UserRole.GUIDE &&
-                    user.approvalStatus == ApprovalStatus.REJECTED -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(RoamlyBackground),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Text(
-                                text = "Guide access declined",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = RoamlyTextPrimary
-                            )
-
-                            Text(
-                                text = "Your guide application (${user.email}) was not approved. You cannot access the Guide portal. Please contact support if you believe this is a mistake.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = RoamlyTextSecondary
-                            )
-
-                            Button(
-                                onClick = {
-                                    authViewModel.signOut()
-                                }
-                            ) {
-                                Text("Return to Sign In")
-                            }
-                        }
-                    }
-                }
-
 
                 // Never silently route an unknown account to Traveller.
                 else -> {

@@ -22,12 +22,21 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -170,31 +179,79 @@ fun GuidePendingApprovalScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        var isRefreshing by remember { mutableStateOf(false) }
+        var cooldownSeconds by remember { mutableIntStateOf(0) }
+        val coroutineScope = rememberCoroutineScope()
 
         // Check Status Button
         Button(
-            onClick = onRefreshStatus,
+            onClick = {
+                if (!isRefreshing && cooldownSeconds == 0) {
+                    coroutineScope.launch {
+                        isRefreshing = true
+                        try {
+                            onRefreshStatus()
+                            delay(600L)
+                            cooldownSeconds = 5
+                            while (cooldownSeconds > 0) {
+                                delay(1000L)
+                                cooldownSeconds -= 1
+                            }
+                        } finally {
+                            isRefreshing = false
+                        }
+                    }
+                }
+            },
+            enabled = !isRefreshing && cooldownSeconds == 0,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = RoamlyPrimary,
-                contentColor = RoamlySurface
+                contentColor = RoamlySurface,
+                disabledContainerColor = RoamlySurfaceVariant,
+                disabledContentColor = RoamlyTextSecondary
             )
         ) {
-            Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Refresh Status",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            if (isRefreshing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = RoamlyPrimary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Checking Status...",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            } else if (cooldownSeconds > 0) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Refresh Status (${cooldownSeconds}s)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Refresh Status",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

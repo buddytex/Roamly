@@ -56,6 +56,12 @@ class SupabaseAuthRepository(
         )
     }
 
+    fun getActiveNetworkClient(): SupabaseNetworkClient? {
+        return if (isBackendConfigured) networkClient else null
+    }
+
+    fun isBackendEnabled(): Boolean = isBackendConfigured
+
     private val _authState = MutableStateFlow<AuthState>(AuthState.Initializing)
     override val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
@@ -71,7 +77,10 @@ class SupabaseAuthRepository(
     }
 
     private fun saveRole(role: UserRole) {
-        roamlyPrefs.edit().putString("key_selected_role", role.name).apply()
+        roamlyPrefs.edit()
+            .putString("key_selected_role", role.name)
+            .putString("key_role", role.name)
+            .apply()
         prefs.edit().putString(KEY_USER_ROLE, role.name).apply()
     }
 
@@ -95,7 +104,7 @@ class SupabaseAuthRepository(
                     ?: firebaseUser.email?.substringBefore("@")
                     ?: "Explorer",
                 role = resolvedRole,
-                approvalStatus = cachedUser?.approvalStatus ?: ApprovalStatus.APPROVED,
+                approvalStatus = ApprovalStatus.APPROVED,
                 photoUrl = firebaseUser.photoUrl?.toString() ?: cachedUser?.photoUrl,
                 isEmailConfirmed = firebaseUser.isEmailVerified || cachedUser?.isEmailConfirmed == true
             )
@@ -105,9 +114,6 @@ class SupabaseAuthRepository(
             when {
                 resolvedRole == null -> {
                     _authState.value = AuthState.AwaitingRoleSelection(authUser)
-                }
-                resolvedRole == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.PENDING -> {
-                    _authState.value = AuthState.AwaitingGuideApproval(authUser)
                 }
                 else -> {
                     _authState.value = AuthState.Authenticated(authUser)
@@ -127,7 +133,7 @@ class SupabaseAuthRepository(
             return@withContext
         }
 
-        val cachedUser = try {
+        var cachedUser = try {
             gson.fromJson(cachedUserJson, AuthUser::class.java)
         } catch (e: Exception) {
             null
@@ -141,6 +147,7 @@ class SupabaseAuthRepository(
 
         // Check token expiry
         val now = System.currentTimeMillis()
+        var currentToken = cachedToken
         if (now >= expiresAt && isBackendConfigured) {
             val refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)
             if (!refreshToken.isNullOrBlank()) {
@@ -149,7 +156,9 @@ class SupabaseAuthRepository(
                         RefreshTokenRequest(refreshToken)
                     )
                     if (refreshResponse.isSuccessful && refreshResponse.body() != null) {
-                        saveSession(refreshResponse.body()!!, cachedUser)
+                        val body = refreshResponse.body()!!
+                        currentToken = body.accessToken ?: cachedToken
+                        saveSession(body, cachedUser)
                     } else {
                         clearSession()
                         _authState.value = AuthState.SignedOut
@@ -161,20 +170,37 @@ class SupabaseAuthRepository(
             }
         }
 
+        // Refresh authoritative profile from backend to sync approval status and role
+        if (isBackendConfigured && !currentToken.isNullOrBlank()) {
+            val freshProfile = fetchProfileSafely(cachedUser.id, currentToken)
+            if (freshProfile != null) {
+                val authoritativeRole = when (freshProfile.role?.lowercase()) {
+                    "guide" -> UserRole.GUIDE
+                    "traveller" -> UserRole.TRAVELLER
+                    else -> cachedUser.role
+                }
+                val authoritativeApproval = when (freshProfile.approvalStatus?.lowercase()) {
+                    "rejected" -> ApprovalStatus.REJECTED
+                    else -> ApprovalStatus.APPROVED
+                }
+                val updatedUser = cachedUser.copy(
+                    fullName = freshProfile.fullName ?: cachedUser.fullName,
+                    role = authoritativeRole,
+                    approvalStatus = authoritativeApproval,
+                    phone = freshProfile.phone ?: cachedUser.phone
+                )
+                if (updatedUser != cachedUser) {
+                    cachedUser = updatedUser
+                    prefs.edit().putString(KEY_CACHED_USER, gson.toJson(updatedUser)).apply()
+                    authoritativeRole?.let { saveRole(it) }
+                }
+            }
+        }
+
         _currentUser.value = cachedUser
         when {
             cachedUser.role == null -> {
                 _authState.value = AuthState.AwaitingRoleSelection(cachedUser)
-            }
-            cachedUser.role == UserRole.GUIDE && cachedUser.approvalStatus == ApprovalStatus.PENDING -> {
-                _authState.value = AuthState.AwaitingGuideApproval(cachedUser)
-            }
-            cachedUser.role == UserRole.GUIDE && cachedUser.approvalStatus == ApprovalStatus.REJECTED -> {
-                clearSession()
-                _authState.value = AuthState.Error(
-                    "Your Guide application was declined. Please contact the administrator.",
-                    isRecoverable = false
-                )
             }
             !cachedUser.isEmailConfirmed -> {
                 _authState.value = AuthState.AwaitingEmailVerification(cachedUser.email)
@@ -213,25 +239,20 @@ class SupabaseAuthRepository(
             val authBody = response.body()!!
             val userDto = authBody.user
             val userId = userDto?.id ?: ""
+            val token = authBody.accessToken
 
-            // Fetch Profile from PostgreSQL to determine true role and approval status
-            val profile = fetchProfileSafely(userId)
-            val authUser = mapDtoToAuthUser(userDto, profile, intendedRole)
+            // Fetch Profile from PostgreSQL with access token to determine true role and approval status
+            val profile = fetchProfileSafely(userId, token)
+            val authUser = mapDtoToAuthUser(userDto, profile, fallbackRole = null)
 
             saveSession(authBody, authUser)
-            saveRole(intendedRole)
+            authUser.role?.let { saveRole(it) }
             _currentUser.value = authUser
 
-            // Route based on role & approval
+            // Route based on role
             when {
-                authUser.role == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.PENDING -> {
-                    _authState.value = AuthState.AwaitingGuideApproval(authUser)
-                }
-                authUser.role == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.REJECTED -> {
-                    clearSession()
-                    val msg = "Your Guide access request was not approved."
-                    _authState.value = AuthState.Error(msg, isRecoverable = false)
-                    return@withContext AuthResult.Failure(msg)
+                authUser.role == null -> {
+                    _authState.value = AuthState.AwaitingRoleSelection(authUser)
                 }
                 !authUser.isEmailConfirmed -> {
                     _authState.value = AuthState.AwaitingEmailVerification(authUser.email)
@@ -284,33 +305,42 @@ class SupabaseAuthRepository(
             val userDto = authBody.user
             val isEmailConfirmed = userDto?.emailConfirmedAt != null
 
-            val initialApproval = if (role == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
             val authUser = AuthUser(
                 id = userDto?.id ?: "",
                 email = email.trim(),
                 fullName = fullName.trim(),
                 role = role,
-                approvalStatus = initialApproval,
+                approvalStatus = ApprovalStatus.APPROVED,
                 isEmailConfirmed = isEmailConfirmed
             )
 
-            if (authBody.accessToken != null) {
-                saveSession(authBody, authUser)
+            // If an access token was provided in the signup response, ensure the profile
+            // is persisted in PostgREST with the correct authoritative role.
+            if (!authBody.accessToken.isNullOrBlank() && authUser.id.isNotBlank()) {
+                try {
+                    val profileToUpsert = ProfileDto(
+                        id = authUser.id,
+                        email = authUser.email,
+                        fullName = authUser.fullName,
+                        role = if (role == UserRole.GUIDE) "guide" else "traveller",
+                        approvalStatus = "approved"
+                    )
+                    networkClient.postgrestApi.insertProfile(
+                        profile = profileToUpsert,
+                        authHeader = "Bearer ${authBody.accessToken}"
+                    )
+                } catch (e: Exception) {
+                    // Ignored: database trigger handle_new_user already created the profile
+                }
             }
-            saveRole(role)
-            _currentUser.value = authUser
 
-            when {
-                !isEmailConfirmed -> {
-                    _authState.value = AuthState.AwaitingEmailVerification(email.trim())
-                }
-                role == UserRole.GUIDE -> {
-                    _authState.value = AuthState.AwaitingGuideApproval(authUser)
-                }
-                else -> {
-                    _authState.value = AuthState.Authenticated(authUser)
-                }
-            }
+            // CRITICAL: Registration must NOT automatically log the user in!
+            // Even if Supabase returns tokens (e.g. when email confirmation is disabled),
+            // do not save session or transition to AuthState.Authenticated.
+            // Clear any temporary tokens so restoreSession() does not bypass login.
+            clearSession()
+            _currentUser.value = null
+            _authState.value = AuthState.SignedOut
 
             AuthResult.Success(authUser)
         } catch (e: Exception) {
@@ -339,7 +369,6 @@ class SupabaseAuthRepository(
 
         // 2. Resolve Role
         val resolvedRole = intendedRole ?: getSavedRole()
-        val initialApproval = if (resolvedRole == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
 
         val authUser = AuthUser(
             id = firebaseUser.uid,
@@ -348,7 +377,7 @@ class SupabaseAuthRepository(
                 ?: firebaseUser.email?.substringBefore("@")
                 ?: "Explorer",
             role = resolvedRole,
-            approvalStatus = initialApproval,
+            approvalStatus = ApprovalStatus.APPROVED,
             phone = firebaseUser.phoneNumber,
             photoUrl = firebaseUser.photoUrl?.toString(),
             isEmailConfirmed = firebaseUser.isEmailVerified
@@ -370,9 +399,6 @@ class SupabaseAuthRepository(
             resolvedRole == null -> {
                 _authState.value = AuthState.AwaitingRoleSelection(authUser)
             }
-            resolvedRole == UserRole.GUIDE && authUser.approvalStatus == ApprovalStatus.PENDING -> {
-                _authState.value = AuthState.AwaitingGuideApproval(authUser)
-            }
             else -> {
                 _authState.value = AuthState.Authenticated(authUser)
             }
@@ -383,27 +409,19 @@ class SupabaseAuthRepository(
 
     override fun assignUserRole(role: UserRole) {
         val user = _currentUser.value
-        val approval = if (role == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
-        val updated = user?.copy(role = role, approvalStatus = approval) ?: AuthUser(
+        val updated = user?.copy(role = role, approvalStatus = ApprovalStatus.APPROVED) ?: AuthUser(
             id = "google-user",
             email = "",
             fullName = "Explorer",
             role = role,
-            approvalStatus = approval
+            approvalStatus = ApprovalStatus.APPROVED
         )
 
         saveRole(role)
         prefs.edit().putString(KEY_CACHED_USER, gson.toJson(updated)).apply()
         _currentUser.value = updated
 
-        when {
-            role == UserRole.GUIDE && updated.approvalStatus == ApprovalStatus.PENDING -> {
-                _authState.value = AuthState.AwaitingGuideApproval(updated)
-            }
-            else -> {
-                _authState.value = AuthState.Authenticated(updated)
-            }
-        }
+        _authState.value = AuthState.Authenticated(updated)
     }
 
     override suspend fun sendPasswordResetEmail(email: String): AuthResult<Unit> = withContext(ioDispatcher) {
@@ -468,55 +486,21 @@ class SupabaseAuthRepository(
         }
     }
 
-    private suspend fun fetchProfileSafely(userId: String): ProfileDto? {
+    private suspend fun fetchProfileSafely(userId: String, token: String? = null): ProfileDto? {
         if (userId.isBlank()) return null
+        val effectiveToken = token ?: prefs.getString(KEY_ACCESS_TOKEN, null)
+        val authHeader = if (!effectiveToken.isNullOrBlank()) "Bearer $effectiveToken" else null
         return try {
-            val profileRes = networkClient.postgrestApi.getProfile("eq.$userId")
+            val profileRes = networkClient.postgrestApi.getProfile(
+                idFilter = "eq.$userId",
+                authHeader = authHeader
+            )
             if (profileRes.isSuccessful && !profileRes.body().isNullOrEmpty()) {
                 profileRes.body()!!.first()
             } else null
         } catch (e: Exception) {
             null
         }
-    }
-
-    private fun mapDtoToAuthUser(
-        userDto: com.roamly.app.auth.network.UserDto?,
-        profile: ProfileDto?,
-        fallbackRole: UserRole
-    ): AuthUser {
-        val roleStr = profile?.role ?: (userDto?.userMetadata?.get("role") as? String)
-        val resolvedRole = if (roleStr?.equals("guide", ignoreCase = true) == true) {
-            UserRole.GUIDE
-        } else if (roleStr?.equals("traveller", ignoreCase = true) == true) {
-            UserRole.TRAVELLER
-        } else {
-            fallbackRole
-        }
-
-        val approvalStr = profile?.approvalStatus
-        val resolvedApproval = when (approvalStr?.lowercase()) {
-            "approved" -> ApprovalStatus.APPROVED
-            "rejected" -> ApprovalStatus.REJECTED
-            "pending" -> ApprovalStatus.PENDING
-            else -> if (resolvedRole == UserRole.GUIDE) ApprovalStatus.PENDING else ApprovalStatus.APPROVED
-        }
-
-        val fullName = profile?.fullName
-            ?: (userDto?.userMetadata?.get("full_name") as? String)
-            ?: (userDto?.userMetadata?.get("name") as? String)
-            ?: userDto?.email?.substringBefore("@")
-            ?: "Explorer"
-
-        return AuthUser(
-            id = userDto?.id ?: profile?.id ?: "",
-            email = userDto?.email ?: profile?.email ?: "",
-            fullName = fullName,
-            role = resolvedRole,
-            approvalStatus = resolvedApproval,
-            phone = profile?.phone,
-            isEmailConfirmed = userDto?.emailConfirmedAt != null
-        )
     }
 
     private fun saveSession(authResponse: AuthResponse, user: AuthUser) {
@@ -537,6 +521,11 @@ class SupabaseAuthRepository(
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_EXPIRES_AT)
             .remove(KEY_CACHED_USER)
+            .remove(KEY_USER_ROLE)
+            .apply()
+        roamlyPrefs.edit()
+            .remove("key_selected_role")
+            .remove("key_role")
             .apply()
     }
 
@@ -554,6 +543,43 @@ class SupabaseAuthRepository(
             return instance ?: synchronized(this) {
                 instance ?: SupabaseAuthRepository(context.applicationContext).also { instance = it }
             }
+        }
+
+        internal fun mapDtoToAuthUser(
+            userDto: com.roamly.app.auth.network.UserDto?,
+            profile: ProfileDto?,
+            fallbackRole: UserRole? = null
+        ): AuthUser {
+            val roleStr = profile?.role ?: (userDto?.userMetadata?.get("role") as? String)
+            val resolvedRole = if (roleStr?.equals("guide", ignoreCase = true) == true) {
+                UserRole.GUIDE
+            } else if (roleStr?.equals("traveller", ignoreCase = true) == true) {
+                UserRole.TRAVELLER
+            } else {
+                fallbackRole
+            }
+
+            val approvalStr = profile?.approvalStatus
+            val resolvedApproval = when (approvalStr?.lowercase()) {
+                "rejected" -> ApprovalStatus.REJECTED
+                else -> ApprovalStatus.APPROVED
+            }
+
+            val fullName = profile?.fullName
+                ?: (userDto?.userMetadata?.get("full_name") as? String)
+                ?: (userDto?.userMetadata?.get("name") as? String)
+                ?: userDto?.email?.substringBefore("@")
+                ?: "Explorer"
+
+            return AuthUser(
+                id = userDto?.id ?: profile?.id ?: "",
+                email = userDto?.email ?: profile?.email ?: "",
+                fullName = fullName,
+                role = resolvedRole,
+                approvalStatus = resolvedApproval,
+                phone = profile?.phone,
+                isEmailConfirmed = userDto?.emailConfirmedAt != null
+            )
         }
     }
 }

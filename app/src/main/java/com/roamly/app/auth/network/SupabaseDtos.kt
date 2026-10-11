@@ -67,5 +67,55 @@ data class SupabaseErrorResponse(
     @SerializedName("error_description") val errorDescription: String? = null,
     val message: String? = null,
     val msg: String? = null,
-    val code: Int? = null
+    val code: Int? = null,
+    @SerializedName("error_code") val errorCode: String? = null
 )
+
+data class DemoSessionDto(
+    val id: String? = null,
+    @SerializedName("trip_id") val tripId: String,
+    @SerializedName("trip_slug") val tripSlug: String = "trip_tinkerspace_demo",
+    @SerializedName("traveller_id") val travellerId: String,
+    @SerializedName("traveller_name") val travellerName: String,
+    val status: String,
+    @SerializedName("location_available") val locationAvailable: Boolean = true,
+    @SerializedName("last_event") val lastEvent: String? = null,
+    @SerializedName("last_event_time") val lastEventTime: String? = null,
+    @SerializedName("departure_time") val departureTime: String? = null,
+    @SerializedName("return_time") val returnTime: String? = null,
+    @SerializedName("belongings_checked") val belongingsChecked: Boolean = false,
+    @SerializedName("belongings_checked_time") val belongingsCheckedTime: String? = null,
+    @SerializedName("is_completed") val isCompleted: Boolean = false,
+    @SerializedName("completed_time") val completedTime: String? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null
+)
+
+data class DemoEventDto(
+    val id: String? = null,
+    @SerializedName("session_id") val sessionId: String? = null,
+    @SerializedName("trip_id") val tripId: String,
+    @SerializedName("traveller_id") val travellerId: String,
+    @SerializedName("event_type") val eventType: String,
+    val description: String,
+    @SerializedName("event_timestamp") val eventTimestamp: String
+)
+
+data class TripDto(
+    val id: String,
+    val slug: String,
+    val title: String,
+    val destination: String,
+    val country: String,
+    @SerializedName("duration_days") val durationDays: Int = 1,
+    val status: String = "Upcoming"
+)
+
+data class TripMemberDto(
+    val id: String? = null,
+    @SerializedName("trip_id") val tripId: String,
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("membership_role") val membershipRole: String = "traveller",
+    @SerializedName("created_at") val createdAt: String? = null
+)
+
+

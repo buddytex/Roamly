@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_check_ins_traveller ON public.check_ins(traveller
 CREATE INDEX IF NOT EXISTS idx_announcements_trip ON public.announcements(trip_id);
 
 -- 8. HELPER SECURITY FUNCTIONS
--- Checks if user is an approved guide
+-- Checks if user is an approved guide (guides do not require manual admin approval)
 CREATE OR REPLACE FUNCTION public.is_approved_guide(user_uuid UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -85,7 +85,7 @@ BEGIN
         SELECT 1 FROM public.profiles
         WHERE id = user_uuid
           AND role = 'guide'
-          AND approval_status = 'approved'
+          AND approval_status <> 'rejected'
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -100,7 +100,7 @@ BEGIN
         WHERE tm.trip_id = target_trip
           AND tm.user_id = user_uuid
           AND tm.membership_role IN ('guide', 'lead_guide')
-          AND p.approval_status = 'approved'
+          AND p.approval_status <> 'rejected'
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -149,11 +149,10 @@ DECLARE
     parsed_full_name TEXT;
 BEGIN
     -- Extract requested role from metadata, default to 'traveller'
-    requested_role := COALESCE(NEW.raw_user_meta_data->>'role', 'traveller');
+    requested_role := LOWER(TRIM(COALESCE(NEW.raw_user_meta_data->>'role', 'traveller')));
 
-    -- Guides must NEVER be self-approved. They start as 'pending'
     IF requested_role = 'guide' THEN
-        initial_approval := 'pending';
+        initial_approval := 'approved';
     ELSE
         requested_role := 'traveller';
         initial_approval := 'approved';

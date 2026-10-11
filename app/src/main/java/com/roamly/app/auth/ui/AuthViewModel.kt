@@ -48,6 +48,20 @@ class AuthViewModel(
     private val _passwordResetSent = MutableStateFlow(false)
     val passwordResetSent: StateFlow<Boolean> = _passwordResetSent.asStateFlow()
 
+    private val _accountCreatedSuccess = MutableStateFlow<String?>(null)
+    val accountCreatedSuccess: StateFlow<String?> = _accountCreatedSuccess.asStateFlow()
+
+    private val _lastRegisteredEmail = MutableStateFlow<String?>(null)
+    val lastRegisteredEmail: StateFlow<String?> = _lastRegisteredEmail.asStateFlow()
+
+    private var isEmailSignInRunning = false
+    private var isEmailSignUpRunning = false
+    private var isPasswordResetRunning = false
+    private var isSessionRestoreRunning = false
+    private var isDemoSignInRunning = false
+    private var isGoogleSignInRunning = false
+    private var isSignOutRunning = false
+
     init {
         restoreSession()
     }
@@ -59,12 +73,23 @@ class AuthViewModel(
 
     fun clearPortal() {
         _selectedPortal.value = null
+        _accountCreatedSuccess.value = null
         clearErrors()
     }
 
+    fun clearAccountCreatedSuccess() {
+        _accountCreatedSuccess.value = null
+    }
+
     fun restoreSession() {
+        if (isSessionRestoreRunning) return
+        isSessionRestoreRunning = true
         viewModelScope.launch {
-            authRepository.restoreSession()
+            try {
+                authRepository.restoreSession()
+            } finally {
+                isSessionRestoreRunning = false
+            }
         }
     }
 
@@ -90,6 +115,7 @@ class AuthViewModel(
     }
 
     fun signIn(email: String, password: String, role: UserRole) {
+        _accountCreatedSuccess.value = null
         val emailErr = validateEmail(email)
         val passErr = validatePassword(password)
 
@@ -98,21 +124,35 @@ class AuthViewModel(
             return
         }
 
+        if (isEmailSignInRunning) return
+        isEmailSignInRunning = true
         _formErrors.value = AuthFormErrors()
 
         viewModelScope.launch {
-            val result = authRepository.signInWithEmail(email.trim(), password, role)
-            if (result is AuthResult.Failure) {
-                _formErrors.value = AuthFormErrors(generalError = result.message)
+            try {
+                val result = authRepository.signInWithEmail(email.trim(), password, role)
+                if (result is AuthResult.Failure) {
+                    _formErrors.value = AuthFormErrors(generalError = result.message)
+                }
+            } catch (e: Exception) {
+                _formErrors.value = AuthFormErrors(generalError = e.localizedMessage ?: "Sign in failed. Please try again.")
+            } finally {
+                isEmailSignInRunning = false
             }
         }
     }
 
     fun signInAsDemo(role: UserRole) {
+        if (isDemoSignInRunning) return
+        isDemoSignInRunning = true
         _formErrors.value = AuthFormErrors()
         _selectedPortal.value = role
         viewModelScope.launch {
-            authRepository.signInAsDemoUser(role)
+            try {
+                authRepository.signInAsDemoUser(role)
+            } finally {
+                isDemoSignInRunning = false
+            }
         }
     }
 
@@ -121,8 +161,12 @@ class AuthViewModel(
         email: String,
         password: String,
         confirmPassword: String,
-        role: UserRole
+        role: UserRole,
+        onSuccess: (() -> Unit)? = null
     ) {
+        clearErrors()
+        _accountCreatedSuccess.value = null
+
         val nameErr = validateFullName(fullName)
         val emailErr = validateEmail(email)
         val passErr = validatePassword(password)
@@ -142,17 +186,32 @@ class AuthViewModel(
             return
         }
 
+        if (isEmailSignUpRunning) return
+        isEmailSignUpRunning = true
         _formErrors.value = AuthFormErrors()
 
         viewModelScope.launch {
-            val result = authRepository.signUpWithEmail(fullName.trim(), email.trim(), password, role)
-            if (result is AuthResult.Failure) {
-                _formErrors.value = AuthFormErrors(generalError = result.message)
+            try {
+                val result = authRepository.signUpWithEmail(fullName.trim(), email.trim(), password, role)
+                when (result) {
+                    is AuthResult.Success -> {
+                        val roleLabel = if (role == UserRole.GUIDE) "Guide" else "Traveller"
+                        _accountCreatedSuccess.value = "$roleLabel account created successfully! Please sign in with your credentials."
+                        _lastRegisteredEmail.value = email.trim()
+                        _selectedPortal.value = role
+                        onSuccess?.invoke()
+                    }
+                    is AuthResult.Failure -> {
+                        _formErrors.value = AuthFormErrors(generalError = result.message)
+                    }
+                }
+            } catch (e: Exception) {
+                _formErrors.value = AuthFormErrors(generalError = e.localizedMessage ?: "Registration failed. Please try again.")
+            } finally {
+                isEmailSignUpRunning = false
             }
         }
     }
-
-    private var isGoogleSignInRunning = false
 
     fun signInWithGoogle(context: Context, role: UserRole? = null) {
         if (isGoogleSignInRunning) return
@@ -197,13 +256,21 @@ class AuthViewModel(
             return
         }
 
+        if (isPasswordResetRunning) return
+        isPasswordResetRunning = true
         _formErrors.value = AuthFormErrors()
         _passwordResetSent.value = false
 
         viewModelScope.launch {
-            authRepository.sendPasswordResetEmail(email.trim())
-            // Always set success to prevent user enumeration
-            _passwordResetSent.value = true
+            try {
+                authRepository.sendPasswordResetEmail(email.trim())
+                // Always set success to prevent user enumeration
+                _passwordResetSent.value = true
+            } catch (e: Exception) {
+                _passwordResetSent.value = true
+            } finally {
+                isPasswordResetRunning = false
+            }
         }
     }
 
@@ -213,10 +280,18 @@ class AuthViewModel(
     }
 
     fun signOut() {
+        if (isSignOutRunning) return
+        isSignOutRunning = true
+        _accountCreatedSuccess.value = null
+        _lastRegisteredEmail.value = null
         viewModelScope.launch {
-            authRepository.signOut()
-            _selectedPortal.value = null
-            clearErrors()
+            try {
+                authRepository.signOut()
+                _selectedPortal.value = null
+                clearErrors()
+            } finally {
+                isSignOutRunning = false
+            }
         }
     }
 

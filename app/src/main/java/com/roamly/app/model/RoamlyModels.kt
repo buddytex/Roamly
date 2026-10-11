@@ -112,12 +112,60 @@ data class DocumentGuide(
 data class TravellerRecord(
     val id: String,
     val name: String,
-    val assignedTripId: String,
-    val assignedTripName: String,
-    val preparationStatus: String, // "Ready", "Preparation Incomplete", "Documents Pending"
-    val packedItemsCount: Int,
-    val totalItemsCount: Int,
-    val visitedActivitiesCount: Int,
-    val totalActivitiesCount: Int,
-    val contactPhone: String = "+65 8123 4567"
+    val assignedTripId: String = "trip_singapore_2026",
+    val assignedTripName: String = "Singapore 5-Day Highlights",
+    val preparationStatus: String = "Registered", // "Ready", "Preparation Incomplete", "Documents Pending", "Registered"
+    val packedItemsCount: Int = 0,
+    val totalItemsCount: Int = 0,
+    val visitedActivitiesCount: Int = 0,
+    val totalActivitiesCount: Int = 0,
+    val contactPhone: String = "",
+    val email: String? = null,
+    val overallStatus: String = "Registered",
+    val demoStatus: DemoStatus = DemoStatus.NOT_STARTED,
+    val isLocationMonitoringActive: Boolean = false,
+    val lastRecordedEvent: String? = null,
+    val lastEventTimestamp: Long? = null,
+    val departureTimestamp: Long? = null,
+    val returnTimestamp: Long? = null,
+    val isBelongingsChecked: Boolean = false,
+    val isTripCompleted: Boolean = false,
+    val completedTimestamp: Long? = null
 )
+
+
+enum class DemoStatus(val displayName: String) {
+    NOT_STARTED("Not Started"),
+    ACTIVE("Active"),
+    DEPARTED("Departed"),
+    RETURNED("Returned"),
+    AWAITING_BELONGINGS_CHECK("Awaiting Belongings Check"),
+    COMPLETED("Completed"),
+    LOCATION_UNAVAILABLE("Location Unavailable")
+}
+
+data class DemoEventRecord(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val eventType: String,
+    val description: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class TravellerDemoStatus(
+    val travellerId: String,
+    val travellerName: String,
+    val tripId: String = "trip_tinkerspace_demo",
+    val tripName: String = "Outside Tinkerspace",
+    val status: DemoStatus = DemoStatus.NOT_STARTED,
+    val isLocationAvailable: Boolean = true,
+    val lastEvent: String = "Demo initialized",
+    val lastEventTimestamp: Long = System.currentTimeMillis(),
+    val departureTime: Long? = null,
+    val returnTime: Long? = null,
+    val isBelongingsChecked: Boolean = false,
+    val belongingsCheckedTime: Long? = null,
+    val isCompleted: Boolean = false,
+    val completedTime: Long? = null,
+    val eventHistory: List<DemoEventRecord> = emptyList()
+)
+

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Icon
@@ -26,7 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.roamly.app.ui.theme.RoamlyError
+import com.roamly.app.ui.theme.RoamlyOnPrimaryContainer
 import com.roamly.app.ui.theme.RoamlyPrimary
+import com.roamly.app.ui.theme.RoamlyPrimaryContainer
 import com.roamly.app.ui.theme.RoamlySurface
 import com.roamly.app.ui.theme.RoamlyTextPrimary
 import com.roamly.app.ui.theme.RoamlyTextSecondary
@@ -109,6 +112,38 @@ fun AuthErrorBanner(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = RoamlyError,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun AuthSuccessBanner(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(RoamlyPrimaryContainer.copy(alpha = 0.6f))
+            .border(1.dp, RoamlyPrimary.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = RoamlyPrimary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = RoamlyOnPrimaryContainer,
                 fontWeight = FontWeight.Medium,
                 lineHeight = 18.sp
             )

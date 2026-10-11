@@ -26,7 +26,6 @@ sealed class AuthState {
     object SigningUp : AuthState()
     data class AwaitingRoleSelection(val user: AuthUser) : AuthState()
     data class AwaitingEmailVerification(val email: String) : AuthState()
-    data class AwaitingGuideApproval(val user: AuthUser) : AuthState()
     data class Authenticated(val user: AuthUser) : AuthState()
     object SigningOut : AuthState()
     data class Error(val message: String, val isRecoverable: Boolean = true) : AuthState()
